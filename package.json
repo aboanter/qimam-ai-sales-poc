@@ -1,0 +1,14 @@
+{
+  "name": "qimam-ai-sales-live-claude",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Qimam AI Sales Analytics — two real sequential Anthropic API calls per question (query planning + presentation planning), generic renderer, no local fallback.",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
