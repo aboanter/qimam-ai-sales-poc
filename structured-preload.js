@@ -1,11 +1,24 @@
-// Preload wrapper: enforce Anthropic Structured Outputs for the presentation call
-// without changing the business/query engine in server.js.
+// Runtime wrapper for the live Claude POC.
+// 1) Use Claude Sonnet 4.6 by default for lower latency (thinking is not on by default).
+// 2) Extend server.js's effective Anthropic timeout from 30s to ~90s.
+// 3) Enforce Structured Outputs on the presentation call.
+
+if (!process.env.ANTHROPIC_MODEL) {
+  process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+}
+
+const NativeAbortController = global.AbortController;
+if (NativeAbortController) {
+  global.AbortController = class RelaxedAbortController extends NativeAbortController {
+    abort(reason) {
+      // server.js asks to abort after 30s; delay the actual abort by another 60s.
+      setTimeout(() => super.abort(reason), 60000);
+    }
+  };
+}
 
 const originalFetch = global.fetch;
 
-// Keep the JSON Schema intentionally conservative. Anthropic Structured Outputs
-// supports a subset of JSON Schema; avoid unsupported array constraints such as
-// maxItems and avoid nullable union types where omission works just as well.
 const uiSchema = {
   type: 'object',
   additionalProperties: false,
@@ -68,37 +81,26 @@ const uiSchema = {
 };
 
 global.fetch = async function(url, options = {}) {
-  let structuredTimer = null;
   try {
     if (String(url).includes('api.anthropic.com/v1/messages') && options.body) {
       const body = JSON.parse(options.body);
 
-      // The second Claude call is the expensive structured presentation stage.
+      // Presentation call only: make Claude return a schema-valid UI object.
       if (body.system === 'You output only the JSON object described in the instructions below — no other text.') {
-        body.max_tokens = 3500;
+        body.max_tokens = 3000;
         body.output_config = {
           format: {
             type: 'json_schema',
             schema: uiSchema
           }
         };
-
-        // server.js currently supplies a 30s AbortSignal. Structured generation can
-        // legitimately take longer, so replace it here with a dedicated 90s signal.
-        const controller = new AbortController();
-        structuredTimer = setTimeout(() => controller.abort(), 90000);
-        options = { ...options, body: JSON.stringify(body), signal: controller.signal };
+        options = { ...options, body: JSON.stringify(body) };
       }
     }
   } catch (e) {
     console.error('structured-preload inspection error:', e.message);
   }
-
-  try {
-    return await originalFetch(url, options);
-  } finally {
-    if (structuredTimer) clearTimeout(structuredTimer);
-  }
+  return originalFetch(url, options);
 };
 
 require('./server.js');
