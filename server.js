@@ -67,7 +67,7 @@ async function callAnthropic(system, userText) {
     r = await fetch(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 2000, temperature: 0.2, system, messages: [{ role: 'user', content: userText }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: userText }] }),
       signal: controller.signal,
     });
   } catch (e) {
