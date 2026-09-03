@@ -3,6 +3,9 @@
 
 const originalFetch = global.fetch;
 
+// Keep the JSON Schema intentionally conservative. Anthropic Structured Outputs
+// supports a subset of JSON Schema; avoid unsupported array constraints such as
+// maxItems and avoid nullable union types where omission works just as well.
 const uiSchema = {
   type: 'object',
   additionalProperties: false,
@@ -12,7 +15,6 @@ const uiSchema = {
     summary: { type: 'string' },
     components: {
       type: 'array',
-      maxItems: 20,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -23,19 +25,28 @@ const uiSchema = {
             enum: ['kpi','table','bar_chart','line_chart','area_chart','pie_chart','scatter_chart','insight']
           },
           title: { type: 'string' },
-          value: { type: ['number','string','null'] },
-          format: { type: ['string','null'], enum: ['currency','number','percent',null] },
-          trend: { type: ['string','null'], enum: ['good','warn',null] },
-          severity: { type: ['string','null'], enum: ['info','warning','positive',null] },
-          text: { type: ['string','null'] },
-          columns: { type: ['array','null'], items: { type: 'string' } },
+
+          // KPI fields
+          value: { type: 'number' },
+          format: { type: 'string', enum: ['currency','number','percent'] },
+          trend: { type: 'string', enum: ['good','warn'] },
+
+          // Insight fields
+          severity: { type: 'string', enum: ['info','warning','positive'] },
+          text: { type: 'string' },
+
+          // Table fields. Cells are strings to keep the structured-output schema
+          // simple; Claude may format factual numeric values as strings here.
+          columns: { type: 'array', items: { type: 'string' } },
           rows: {
-            type: ['array','null'],
-            items: { type: 'array', items: { type: ['string','number','boolean','null'] } }
+            type: 'array',
+            items: { type: 'array', items: { type: 'string' } }
           },
-          categories: { type: ['array','null'], items: { type: ['string','number'] } },
+
+          // Categorical chart fields
+          categories: { type: 'array', items: { type: 'string' } },
           series: {
-            type: ['array','null'],
+            type: 'array',
             items: {
               type: 'object',
               additionalProperties: false,
@@ -46,11 +57,13 @@ const uiSchema = {
               }
             }
           },
-          horizontal: { type: ['boolean','null'] },
-          xLabel: { type: ['string','null'] },
-          yLabel: { type: ['string','null'] },
+          horizontal: { type: 'boolean' },
+
+          // Scatter chart fields
+          xLabel: { type: 'string' },
+          yLabel: { type: 'string' },
           points: {
-            type: ['array','null'],
+            type: 'array',
             items: {
               type: 'object',
               additionalProperties: false,
