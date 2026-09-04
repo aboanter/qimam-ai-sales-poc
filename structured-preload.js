@@ -22,8 +22,6 @@ if (NativeAbortController) {
 
 const originalFetch = global.fetch;
 
-// Intentionally tiny schema: Anthropic Structured Outputs rejects very complex
-// nested schemas. Component-specific details live in `data` as a JSON string.
 const uiSchema = {
   type: 'object',
   additionalProperties: false,
@@ -53,7 +51,7 @@ const uiSchema = {
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
 
 function addCompactSchemaInstruction(body) {
-  const extra = `\n\nIMPORTANT STRUCTURED-OUTPUT ADAPTER:\nThe response schema you must satisfy represents each UI component as exactly {type, title, data}. Put ALL component-specific fields inside \"data\" as a JSON-encoded string. Do not duplicate type/title inside data. Examples:\n- KPI data: {\"value\":12345,\"format\":\"currency\",\"trend\":\"good\"}\n- insight data: {\"severity\":\"warning\",\"text\":\"...\"}\n- bar/line/area/pie data: {\"categories\":[\"A\",\"B\"],\"series\":[{\"name\":\"المبيعات\",\"data\":[1,2]}],\"horizontal\":false}\n- scatter data: {\"xLabel\":\"...\",\"yLabel\":\"...\",\"points\":[{\"x\":1,\"y\":2,\"label\":\"...\"}]}\n- table data: {\"columns\":[\"العميل\",\"المبيعات\"],\"rows\":[[\"أ\",\"1000\"],[\"ب\",\"800\"]]}\nThe outer title/summary/components and your analytical choices remain fully dynamic.`;
+  const extra = `\n\nIMPORTANT STRUCTURED-OUTPUT ADAPTER:\nThe response schema represents each UI component as exactly {type, title, data}. Put ALL component-specific fields inside \"data\" as a JSON-encoded string. Do not duplicate type/title inside data.\n\nSTRICT SIZE RULES FOR THIS INTERACTIVE POC:\n- Prefer 4 to 8 total components; never exceed 8.\n- Summary: maximum 3 concise Arabic sentences.\n- A chart should normally contain at most 12 categories/points. Use top-N or monthly/quarterly aggregation rather than dumping raw rows.\n- Tables: maximum 10 rows and only columns needed to answer the question.\n- Do not repeat the same factual information in multiple components unless comparison genuinely needs it.\n- Choose the smallest useful set of visualizations. Dynamic does NOT mean large.\n\nExamples of data strings:\n- KPI: {\"value\":12345,\"format\":\"currency\",\"trend\":\"good\"}\n- insight: {\"severity\":\"warning\",\"text\":\"...\"}\n- bar/line/area/pie: {\"categories\":[\"A\",\"B\"],\"series\":[{\"name\":\"المبيعات\",\"data\":[1,2]}],\"horizontal\":false}\n- scatter: {\"xLabel\":\"...\",\"yLabel\":\"...\",\"points\":[{\"x\":1,\"y\":2,\"label\":\"...\"}]}\n- table: {\"columns\":[\"العميل\",\"المبيعات\"],\"rows\":[[\"أ\",\"1000\"],[\"ب\",\"800\"]]}\nThe analytical choices remain fully dynamic; these are only output-size constraints.`;
 
   if (Array.isArray(body.messages) && body.messages.length) {
     const last = body.messages[body.messages.length - 1];
@@ -83,7 +81,9 @@ global.fetch = async function(url, options = {}) {
       isPresentation = body.system === PRESENTATION_SYSTEM;
 
       if (isPresentation) {
-        body.max_tokens = 3000;
+        // The previous 3000-token cap truncated a valid structured JSON response.
+        // Give enough headroom while the prompt-level size rules keep normal output compact.
+        body.max_tokens = 6000;
         addCompactSchemaInstruction(body);
         body.output_config = {
           format: {
@@ -101,8 +101,6 @@ global.fetch = async function(url, options = {}) {
   const response = await originalFetch(url, options);
   if (!isPresentation || !response.ok) return response;
 
-  // Clone and rewrite only the Anthropic JSON body so server.js receives the
-  // original flat UI component shape it already understands.
   try {
     const payload = await response.clone().json();
     if (!Array.isArray(payload.content)) return response;
