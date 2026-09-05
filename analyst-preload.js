@@ -10,6 +10,30 @@ function parseLoose(text) {
   return JSON.parse(String(text || '').replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim());
 }
 
+function parseJsonPrefix(text) {
+  const s = String(text || '').trimStart();
+  const start = s.search(/[\[{]/);
+  if (start < 0) throw new Error('No JSON prefix found');
+  const open = s[start], close = open === '{' ? '}' : ']';
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return JSON.parse(s.slice(start, i + 1));
+    }
+  }
+  throw new Error('Unterminated JSON prefix');
+}
+
 function extractPresentationEnvelope(body) {
   if (!body || body.system !== PRESENTATION_SYSTEM || !Array.isArray(body.messages)) return null;
   const msg = body.messages[body.messages.length - 1];
@@ -24,15 +48,21 @@ function extractPresentationEnvelope(body) {
     return {
       question: text.slice(qi + qMark.length, pi).trim(),
       plan: JSON.parse(text.slice(pi + pMark.length, ri).trim()),
-      results: JSON.parse(text.slice(ri + rMark.length).trim()),
+      // structured-preload appends presentation instructions after the live results.
+      // Parse only the first complete JSON value so Analyst still receives the
+      // exact MCP payload even when downstream prompt text follows it.
+      results: parseJsonPrefix(text.slice(ri + rMark.length)),
       originalContent: text
     };
-  } catch { return null; }
+  } catch (e) {
+    console.error('analyst-preload envelope parse error:', e.message);
+    return null;
+  }
 }
 
 function safeAnalysis(a) {
   if (!a || typeof a !== 'object') return null;
-  const out = {
+  return {
     version: '2.4',
     answerability: ['complete','partial','insufficient'].includes(a.answerability) ? a.answerability : 'partial',
     scope: a.scope && typeof a.scope === 'object' ? a.scope : {},
@@ -45,14 +75,13 @@ function safeAnalysis(a) {
     insights: Array.isArray(a.insights) ? a.insights.slice(0,12) : [],
     caveats: Array.isArray(a.caveats) ? a.caveats.slice(0,12) : []
   };
-  return out;
 }
 
 async function runAnalyst(envelope, originalBody) {
   const apiKey = process.env.ANTHROPIC_API_KEY || '';
   if (!apiKey) return null;
   const model = process.env.ANTHROPIC_MODEL || originalBody.model || 'claude-sonnet-4-6';
-  const system = `${ANALYST_SYSTEM_MARKER}. You receive the user's question, the executed read-only Odoo plan, and the exact live MCP results. Your job is analysis only: do NOT design UI and do NOT request more data in this version.\n\nReturn ONLY one JSON object with keys: answerability, scope, facts, derivedMetrics, rankings, comparisons, trends, anomalies, insights, caveats.\n\nRules:\n- Use ONLY supplied MCP evidence and deterministic arithmetic from it.\n- Preserve the exact time/company/state/filter scope.\n- facts are important raw observations with evidence references to operation names when possible.\n- derivedMetrics contain objects such as {name,value,unit,formula,inputs,status}. status is valid|not_applicable|insufficient.\n- Percentage change = (current-base)/base*100 only when base != 0. If base=0, status=not_applicable and value=null. Never call 0 -> positive 100% growth.\n- Keep absolute difference separate from percentage change.\n- share_of_total = entity/compatible_total*100 only with a compatible denominator.\n- average = compatible numerator/denominator only when denominator != 0.\n- contribution_to_change for an entity = current_entity - previous_entity; rank contributors by that signed difference when the user asks who contributed to the change.\n- rankings must state metric, direction, scope and items.\n- comparisons must preserve both periods/sides and distinguish absoluteDifference from percentageChange.\n- trends should describe supported direction/pattern, not causal explanations.\n- anomalies are evidence-backed unusual values/patterns, not invented causes.\n- insights must be concise conclusions directly supported by facts/derived metrics.\n- Put missing evidence, zero-base ratios, incompatible scopes, or ambiguous semantics in caveats.\n- If evidence cannot answer part of the question, mark answerability partial/insufficient rather than guessing.\n- No markdown, HTML, CSS, chart choices or presentation instructions.`;
+  const system = `${ANALYST_SYSTEM_MARKER}. You receive the user's question, the executed read-only Odoo plan, and the exact live MCP results. Your job is analysis only: do NOT design UI and do NOT request more data in this version.\n\nReturn ONLY one JSON object with keys: answerability, scope, facts, derivedMetrics, rankings, comparisons, trends, anomalies, insights, caveats.\n\nRules:\n- Use ONLY supplied MCP evidence and deterministic arithmetic from it.\n- Preserve the exact time/company/state/filter scope.\n- facts are important raw observations with evidence references to operation names when possible.\n- derivedMetrics contain objects such as {name,value,unit,formula,inputs,status}. status is valid|not_applicable|insufficient.\n- Percentage change = (current-base)/base*100 only when base != 0. If base=0, status=not_applicable and value=null. Never call 0 -> positive 100% growth.\n- Keep absolute difference separate from percentage change.\n- share_of_total = entity/compatible_total*100 only with a compatible denominator.\n- average = compatible numerator/denominator only when denominator != 0.\n- contribution_to_change for an entity = current_entity - previous_entity; rank contributors by that signed difference when the user asks who contributed to the change.\n- rankings must state metric, direction, scope and items in the exact rank order.\n- comparisons must preserve both periods/sides and distinguish absoluteDifference from percentageChange.\n- trends should describe supported direction/pattern, not causal explanations.\n- anomalies are evidence-backed unusual values/patterns, not invented causes.\n- insights must be concise conclusions directly supported by facts/derived metrics.\n- Put missing evidence, zero-base ratios, incompatible scopes, or ambiguous semantics in caveats.\n- If evidence cannot answer part of the question, mark answerability partial/insufficient rather than guessing.\n- No markdown, HTML, CSS, chart choices or presentation instructions.`;
   const user = `Question:\n${envelope.question}\n\nExecuted plan:\n${JSON.stringify(envelope.plan)}\n\nLIVE MCP evidence:\n${JSON.stringify(envelope.results)}`;
   const resp = await upstreamFetch(ANTHROPIC_URL, {
     method:'POST',
@@ -64,7 +93,10 @@ async function runAnalyst(envelope, originalBody) {
     const payload = await resp.json();
     const text = (payload.content || []).map(x => x.text || '').join('').trim();
     return safeAnalysis(parseLoose(text));
-  } catch { return null; }
+  } catch (e) {
+    console.error('analyst-preload analysis parse error:', e.message);
+    return null;
+  }
 }
 
 global.fetch = async function analystFetch(url, options={}) {
@@ -81,7 +113,7 @@ global.fetch = async function analystFetch(url, options={}) {
       const analysis = await runAnalyst(envelope, body);
       if (analysis) {
         const msg = body.messages[body.messages.length - 1];
-        msg.content += `\n\nANALYST V2.4 — AUTHORITATIVE SEMANTIC ANALYSIS:\n${JSON.stringify(analysis)}\n\nUse this analyst object as the authoritative source for derived metrics, comparisons, rankings and analytical conclusions. The LIVE MCP results remain authoritative for raw facts. Do not recalculate a derived metric differently from the analyst. If analyst status is not_applicable or insufficient, preserve that limitation in the UI instead of inventing a value.`;
+        msg.content += `\n\nANALYST V2.4 — AUTHORITATIVE SEMANTIC ANALYSIS:\n${JSON.stringify(analysis)}\n\nUse this analyst object as the authoritative source for derived metrics, comparisons, rankings and analytical conclusions. The LIVE MCP results remain authoritative for raw facts. Do not recalculate a derived metric differently from the analyst. If analyst status is not_applicable or insufficient, preserve that limitation in the UI instead of inventing a value. When the same ranking appears in multiple components (bar, pie, table, text), preserve the analyst's exact item order everywhere unless the component has a clearly different metric.`;
         options = {...options, body:JSON.stringify(body)};
       }
     } catch (e) {
