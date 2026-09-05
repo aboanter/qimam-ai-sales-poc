@@ -9,6 +9,80 @@ function normLabel(v) {
   return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function parseJsonPrefix(text) {
+  const s = String(text || '').trimStart();
+  const start = s.search(/[\[{]/);
+  if (start < 0) throw new Error('No JSON prefix found');
+  const open = s[start], close = open === '{' ? '}' : ']';
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return JSON.parse(s.slice(start, i + 1));
+  }
+  throw new Error('Unterminated JSON prefix');
+}
+
+function extractEnvelope(body) {
+  if (!body || body.system !== PRESENTATION_SYSTEM || !Array.isArray(body.messages)) return null;
+  const msg = body.messages[body.messages.length - 1];
+  if (!msg || typeof msg.content !== 'string') return null;
+  const text = msg.content;
+  const p = '\n\nExecuted Odoo MCP plan:\n';
+  const r = '\n\nLIVE factual Odoo results:\n';
+  const pi = text.indexOf(p), ri = text.indexOf(r);
+  if (pi < 0 || ri < 0 || pi >= ri) return null;
+  try {
+    return {
+      plan: JSON.parse(text.slice(pi + p.length, ri).trim()),
+      results: parseJsonPrefix(text.slice(ri + r.length))
+    };
+  } catch (e) {
+    console.error('presentation-validator envelope parse error:', e.message);
+    return null;
+  }
+}
+
+function resultEntries(results) {
+  if (Array.isArray(results)) return results.map((v, i) => [String(v?.name || v?.operation || v?.id || `operation_${i + 1}`), v]);
+  if (results && typeof results === 'object') return Object.entries(results);
+  return [];
+}
+
+function hasError(v) {
+  if (!v || typeof v !== 'object') return false;
+  if (v.error || v.errors || v.ok === false || v.success === false) return true;
+  return ['error', 'failed', 'failure'].includes(String(v.status || '').toLowerCase());
+}
+
+function assessCompleteness(envelope) {
+  if (!envelope) return null;
+  const planned = Array.isArray(envelope.plan?.operations) ? envelope.plan.operations.length : 0;
+  const entries = resultEntries(envelope.results);
+  const failed = entries.filter(([, v]) => hasError(v)).map(([k, v]) => ({
+    operation: k,
+    error: String(v?.error || v?.message || v?.status || 'operation failed').slice(0, 240)
+  }));
+  let status = 'complete';
+  if (!entries.length) status = 'insufficient';
+  else if (failed.length) status = failed.length >= entries.length ? 'insufficient' : 'partial';
+  else if (planned && entries.length < planned) status = 'partial';
+  return {
+    version: '1.0',
+    status,
+    plannedOperations: planned,
+    returnedOperations: entries.length,
+    failedOperations: failed
+  };
+}
+
 function sameLabelSet(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length || !a.length) return false;
   const as = a.map(normLabel).sort();
@@ -24,8 +98,7 @@ function findTableOrder(chart, tables) {
     const width = Math.max(...table.rows.map(r => Array.isArray(r) ? r.length : 0), 0);
     for (let col = 0; col < width; col++) {
       const labels = table.rows.map(r => Array.isArray(r) ? r[col] : null).filter(v => v != null && String(v).trim() !== '');
-      if (!sameLabelSet(cats, labels)) continue;
-      return labels;
+      if (sameLabelSet(cats, labels)) return labels;
     }
   }
   return null;
@@ -60,8 +133,7 @@ function sortRankingChartDescending(chart) {
   const rows = chart.categories.map((label, i) => ({ label, i, value: Number(first.data[i]) }));
   if (rows.some(r => !Number.isFinite(r.value))) return false;
   const sorted = rows.slice().sort((a, b) => b.value - a.value);
-  const already = sorted.every((r, i) => r.i === i);
-  if (already) return false;
+  if (sorted.every((r, i) => r.i === i)) return false;
   const indices = sorted.map(r => r.i);
   chart.categories = sorted.map(r => r.label);
   chart.series = chart.series.map(series => ({
@@ -71,7 +143,7 @@ function sortRankingChartDescending(chart) {
   return true;
 }
 
-function validatePresentation(ui) {
+function validatePresentation(ui, completeness) {
   if (!ui || !Array.isArray(ui.components)) return ui;
   const tables = ui.components.filter(c => c && c.type === 'table');
   for (const chart of ui.components) {
@@ -80,18 +152,26 @@ function validatePresentation(ui) {
     if (tableOrder) reorderChart(chart, tableOrder);
     else sortRankingChartDescending(chart);
   }
-  ui.presentationValidationVersion = '1.0';
+  if (completeness) {
+    ui.answerability = completeness.status;
+    ui.dataCompleteness = completeness;
+  }
+  ui.presentationValidationVersion = '1.1';
   return ui;
 }
 
 global.fetch = async function validatedPresentationFetch(url, options = {}) {
   let isPresentation = false;
+  let completeness = null;
   try {
     if (String(url).includes('api.anthropic.com/v1/messages') && options.body) {
       const body = JSON.parse(options.body);
       isPresentation = body.system === PRESENTATION_SYSTEM;
+      if (isPresentation) completeness = assessCompleteness(extractEnvelope(body));
     }
-  } catch {}
+  } catch (e) {
+    console.error('presentation-validator request inspection error:', e.message);
+  }
 
   const response = await structuredFetch(url, options);
   if (!isPresentation || !response.ok) return response;
@@ -102,7 +182,7 @@ global.fetch = async function validatedPresentationFetch(url, options = {}) {
     for (const block of payload.content) {
       if (block && block.type === 'text' && typeof block.text === 'string') {
         const ui = JSON.parse(block.text);
-        block.text = JSON.stringify(validatePresentation(ui));
+        block.text = JSON.stringify(validatePresentation(ui, completeness));
       }
     }
     const headers = new Headers(response.headers);
