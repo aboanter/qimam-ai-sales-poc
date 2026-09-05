@@ -3,10 +3,10 @@
   "version": "2.0.0",
   "private": true,
   "description": "Qimam AI Sales Analytics — two real sequential Anthropic API calls per question (query planning + presentation planning), generic renderer, no local fallback.",
-  "main": "structured-preload.js",
+  "main": "planner-preload.js",
   "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node structured-preload.js"
+    "start": "node planner-preload.js"
   },
   "dependencies": {
     "express": "^4.19.2"
