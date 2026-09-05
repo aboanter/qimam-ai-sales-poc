@@ -1,8 +1,17 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
+app.get('/', (req,res,next) => {
+  try {
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    let html = fs.readFileSync(indexPath, 'utf8');
+    html = html.replace('</body>', '<script src="/chart-patch.js"></script></body>');
+    res.type('html').send(html);
+  } catch (e) { next(e); }
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
