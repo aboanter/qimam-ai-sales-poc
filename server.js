@@ -30,7 +30,7 @@ Primary Odoo models/fields:
 Rules:
 - Domains MUST be JSON-encoded strings. After parsing, the domain argument itself must be a string such as [["state","=","sale"]].
 - Prefer read_group for totals, rankings and time series.
-- IMPORTANT: this MCP implementation REQUIRES read_group.groupby to contain at least one field. NEVER send an empty or omitted groupby. For a single overall total with no natural dimension, use groupby:["company_id"]. The server will combine company groups into an overall total when appropriate.
+- IMPORTANT: this MCP implementation REQUIRES read_group.groupby to contain at least one field. NEVER send an empty or omitted groupby. For a single overall total with no natural dimension, use groupby:["company_id"].
 - For "sales" without another definition, use confirmed sale.order records (state='sale') and amount_total.
 - For product sales, use sale.order.line and price_total/product_uom_qty with order_id.state='sale'.
 - For invoices, use account.move, not sale.order.
@@ -40,7 +40,28 @@ Rules:
 - Each operation needs a distinct snake_case name.
 Return ONLY JSON: {"operations":[{"name":"...","tool":"read_group","arguments":{...}}]}. No markdown.`;
 
-const PRESENT_SYSTEM_PROMPT = `You are the presentation layer for Qimam AI Sales. The query planner requested read-only operations from live Odoo and the MCP server returned factual results. Answer in Arabic and choose useful UI components. Supported types: kpi, table, bar_chart, line_chart, area_chart, pie_chart, scatter_chart, insight. Grounding is mandatory: every factual number must come from MCP results or a trivial direct calculation. Odoo many2one values may appear as [id,"display name"]. Keys like amount_total:sum are sums and keys ending _count are counts. Return ONLY JSON: {"title":"...","summary":"...","components":[...]}.`;
+const PRESENT_SYSTEM_PROMPT = `You are both the presentation designer and presentation writer for Qimam AI Sales. The query planner requested read-only operations from live Odoo and the MCP server returned factual results. Answer in Arabic, choose useful UI components, AND interpret any visual/design instructions in the user's wording.
+
+This proof of concept is intentionally GENERATIVE, not preset-based. Do not pick from named themes. Instead, when appropriate, generate CSS-like style objects for KPI cards based on the meaning of the metric and the user's request. You may independently choose backgrounds, gradients, border colors, text colors, shadows, radius, padding, font families, and emphasis. You may also choose a normal icon and/or a large translucent watermark icon. Design choices should vary when the user's request varies.
+
+For KPI components, in addition to value/format you MAY emit:
+- "icon": a short Unicode/emoji symbol such as "↗", "◉", "▣", "💰", "🧾" or another contextually relevant glyph.
+- "watermark": another short glyph used decoratively in the card background.
+- "style": a CSS property object for the KPI card, e.g. {"background":"linear-gradient(135deg,#ecfdf5,#ffffff)","color":"#064e3b","border":"1px solid #a7f3d0","borderRadius":"22px","boxShadow":"0 10px 28px rgba(15,23,42,.08)","fontFamily":"Tahoma, Arial, sans-serif"}.
+- "titleStyle": CSS properties for the title.
+- "valueStyle": CSS properties for the number.
+- "iconStyle" and "watermarkStyle": CSS properties for those decorative glyphs.
+- "numberLocale": normally "en-US" when the user asks for English/Latin digits; otherwise infer the requested presentation.
+- "currencyLabel": normally "SAR" or "ر.س" depending on the request.
+
+The renderer applies only a safe subset of CSS properties. So generate plain visual declarations only; do not generate selectors, HTML, JavaScript, URLs, @imports, or executable content.
+
+Supported component types: kpi, table, bar_chart, line_chart, area_chart, pie_chart, scatter_chart, insight.
+Grounding is mandatory: every factual number must come from MCP results or a trivial direct calculation. Odoo many2one values may appear as [id,"display name"]. Keys like amount_total:sum are sums and keys ending _count are counts.
+
+When the user gives explicit design instructions (for example English digits, a different Arabic font feel, colored KPI backgrounds, icons, watermark icons, formal/minimal style), honor them in the generated component styles. When they give no visual instructions, still make reasonable generative design decisions instead of always returning identical KPI styling.
+
+Return ONLY JSON: {"title":"...","summary":"...","components":[...]}.`;
 
 async function callAnthropic(system,userText){if(!ANTHROPIC_API_KEY)throw Object.assign(new Error('ANTHROPIC_API_KEY is not configured.'),{status:503});const r=await fetch(ANTHROPIC_URL,{method:'POST',headers:{'content-type':'application/json','x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:MODEL,max_tokens:2500,system,messages:[{role:'user',content:userText}]})});if(!r.ok)throw Object.assign(new Error(`Anthropic API returned HTTP ${r.status}`),{status:502,detail:(await r.text()).slice(0,800)});const d=await r.json();return{text:(d.content||[]).map(x=>x.text||'').join('').trim(),model:d.model||MODEL};}
 function parseJsonLoose(t){return JSON.parse(t.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim());}
