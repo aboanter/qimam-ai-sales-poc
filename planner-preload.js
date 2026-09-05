@@ -1,4 +1,4 @@
-// Planner reliability wrapper. Loaded before structured-preload/server.js.
+// Planner reliability wrapper. Loaded before analyst/structured-preload/server.js.
 const nativeFetch = global.fetch;
 const PLANNER_MARK = 'You are the query planner for a live Odoo 17 sales analytics system';
 
@@ -14,32 +14,18 @@ function normalizeIntent(intent) {
   const out = {};
   out.questionType = allowedTypes.has(intent.questionType) ? intent.questionType : 'mixed';
   out.metrics = Array.isArray(intent.metrics) ? intent.metrics.slice(0,10).map(m => ({
-    name: String(m?.name || '').slice(0,60),
-    model: String(m?.model || '').slice(0,80),
-    field: String(m?.field || '').slice(0,80),
-    aggregation: String(m?.aggregation || '').slice(0,30)
+    name: String(m?.name || '').slice(0,60), model: String(m?.model || '').slice(0,80), field: String(m?.field || '').slice(0,80), aggregation: String(m?.aggregation || '').slice(0,30)
   })).filter(m => m.name || m.field) : [];
   out.dimensions = Array.isArray(intent.dimensions) ? intent.dimensions.map(x => String(x).slice(0,50)).slice(0,12) : [];
   out.filters = Array.isArray(intent.filters) ? intent.filters.map(x => String(x).slice(0,100)).slice(0,12) : [];
   const ts = intent.timeScope && typeof intent.timeScope === 'object' ? intent.timeScope : {};
-  out.timeScope = {
-    explicit: !!ts.explicit,
-    label: ts.label == null ? '' : String(ts.label).slice(0,80),
-    start: ts.start == null ? null : String(ts.start).slice(0,32),
-    endExclusive: ts.endExclusive == null ? null : String(ts.endExclusive).slice(0,32)
-  };
+  out.timeScope = { explicit: !!ts.explicit, label: ts.label == null ? '' : String(ts.label).slice(0,80), start: ts.start == null ? null : String(ts.start).slice(0,32), endExclusive: ts.endExclusive == null ? null : String(ts.endExclusive).slice(0,32) };
   if (!out.timeScope.explicit) { out.timeScope.start = null; out.timeScope.endExclusive = null; }
   const r = intent.ranking;
-  out.ranking = r && typeof r === 'object' ? {
-    dimension: String(r.dimension || '').slice(0,50),
-    metric: String(r.metric || '').slice(0,50),
-    direction: r.direction === 'asc' ? 'asc' : 'desc',
-    limit: Math.max(1, Math.min(Number(r.limit) || 10, 100))
-  } : null;
-  const c = intent.comparison;
-  out.comparison = c && typeof c === 'object' ? c : null;
-  out.analysisGoals = Array.isArray(intent.analysisGoals) ? intent.analysisGoals.map(x => String(x).slice(0,120)).slice(0,12) : [];
-  out.requestedOutputs = Array.isArray(intent.requestedOutputs) ? intent.requestedOutputs.map(x => String(x).slice(0,40)).slice(0,10) : [];
+  out.ranking = r && typeof r === 'object' ? { dimension:String(r.dimension||'').slice(0,50), metric:String(r.metric||'').slice(0,50), direction:r.direction==='asc'?'asc':'desc', limit:Math.max(1,Math.min(Number(r.limit)||10,100)) } : null;
+  out.comparison = intent.comparison && typeof intent.comparison === 'object' ? intent.comparison : null;
+  out.analysisGoals = Array.isArray(intent.analysisGoals) ? intent.analysisGoals.map(x=>String(x).slice(0,120)).slice(0,12) : [];
+  out.requestedOutputs = Array.isArray(intent.requestedOutputs) ? intent.requestedOutputs.map(x=>String(x).slice(0,40)).slice(0,10) : [];
   return out;
 }
 
@@ -47,63 +33,32 @@ function normalizePlan(plan) {
   if (!plan || !Array.isArray(plan.operations)) return plan;
   if (plan.analyticalIntent) plan.analyticalIntent = normalizeIntent(plan.analyticalIntent);
   for (const op of plan.operations) {
-    const a = op && op.arguments;
-    if (!a || typeof a !== 'object') continue;
-    if (Array.isArray(a.domain)) a.domain = JSON.stringify(a.domain);
-    if (a.domain == null) a.domain = '[]';
+    const a = op && op.arguments; if (!a || typeof a !== 'object') continue;
+    if (Array.isArray(a.domain)) a.domain = JSON.stringify(a.domain); if (a.domain == null) a.domain='[]';
     if (op.tool === 'read_group') {
-      if (!Array.isArray(a.groupby) || !a.groupby.length) a.groupby = ['company_id'];
-      if (!Array.isArray(a.fields)) a.fields = [];
-      for (const g of a.groupby) {
-        const base = String(g).split(':')[0];
-        if (base && !a.fields.includes(base)) a.fields.unshift(base);
-      }
-      if (typeof a.order === 'string') {
-        a.order = a.order.replace(/:(sum|avg|min|max|count|count_distinct)(?=\s|,|$)/g, '');
-        if (!a.order.trim()) delete a.order;
-      }
+      if (!Array.isArray(a.groupby) || !a.groupby.length) a.groupby=['company_id']; if (!Array.isArray(a.fields)) a.fields=[];
+      for (const g of a.groupby) { const base=String(g).split(':')[0]; if(base&&!a.fields.includes(base))a.fields.unshift(base); }
+      if (typeof a.order==='string') { a.order=a.order.replace(/:(sum|avg|min|max|count|count_distinct)(?=\s|,|$)/g,''); if(!a.order.trim())delete a.order; }
     }
-    if (Number(a.limit) > 100) a.limit = 100;
+    if (Number(a.limit)>100)a.limit=100;
   }
   return plan;
 }
 
-global.fetch = async function plannerSafeFetch(url, options = {}) {
-  let isPlanner = false;
+global.fetch = async function plannerSafeFetch(url, options={}) {
+  let isPlanner=false;
   try {
     if (String(url).includes('api.anthropic.com/v1/messages') && options.body) {
-      const body = JSON.parse(options.body);
-      isPlanner = typeof body.system === 'string' && body.system.includes(PLANNER_MARK);
-      if (isPlanner) {
-        plannerGuidance(body);
-        options = {...options, body: JSON.stringify(body)};
-      }
+      const body=JSON.parse(options.body); isPlanner=typeof body.system==='string'&&body.system.includes(PLANNER_MARK);
+      if(isPlanner){plannerGuidance(body);options={...options,body:JSON.stringify(body)}}
     }
-  } catch (e) {
-    console.error('planner-preload request inspection error:', e.message);
-  }
-
-  const response = await nativeFetch(url, options);
-  if (!isPlanner || !response.ok) return response;
-
+  } catch(e){console.error('planner-preload request inspection error:',e.message)}
+  const response=await nativeFetch(url,options); if(!isPlanner||!response.ok)return response;
   try {
-    const payload = await response.clone().json();
-    if (Array.isArray(payload.content)) {
-      for (const block of payload.content) {
-        if (block?.type === 'text' && typeof block.text === 'string') {
-          const cleaned = block.text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
-          const plan = normalizePlan(JSON.parse(cleaned));
-          block.text = JSON.stringify(plan);
-        }
-      }
-    }
-    const headers = new Headers(response.headers);
-    headers.set('content-type','application/json');
-    return new Response(JSON.stringify(payload), {status:response.status,statusText:response.statusText,headers});
-  } catch (e) {
-    console.error('planner-preload response normalization error:', e.message);
-    return response;
-  }
+    const payload=await response.clone().json();
+    if(Array.isArray(payload.content))for(const block of payload.content)if(block?.type==='text'&&typeof block.text==='string'){const cleaned=block.text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();block.text=JSON.stringify(normalizePlan(JSON.parse(cleaned)))}
+    const headers=new Headers(response.headers);headers.set('content-type','application/json');return new Response(JSON.stringify(payload),{status:response.status,statusText:response.statusText,headers});
+  } catch(e){console.error('planner-preload response normalization error:',e.message);return response}
 };
 
-require('./structured-preload.js');
+require('./analyst-preload.js');
