@@ -36,9 +36,6 @@
         t.setAttribute('fill', t.getAttribute('fill') || '#52677a');
       });
 
-      // Adaptive mobile x-axis labels. When there are many categories or long
-      // labels, horizontal text collides. Rotate only likely bottom-axis labels
-      // and give them extra breathing room; do not alter data or chart geometry.
       if (mobile && ['bar_chart','line_chart','area_chart'].includes(c.type)) {
         const vb = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
         const viewH = vb.length === 4 && Number.isFinite(vb[3]) ? vb[3] : 300;
@@ -65,7 +62,7 @@
   }
 
   function addLegendItem(svg, x, y, label, color, mobile, align='start') {
-    const dotX = align === 'end' ? x : x;
+    const dotX = x;
     const textX = align === 'end' ? x - 22 : x + 22;
     svg.append(se('circle',{cx:dotX,cy:y-5,r:8,fill:color}));
     const text = txt(svg,textX,y,String(label),'middle',mobile ? 16 : 15);
@@ -74,6 +71,20 @@
       text.setAttribute('direction', /[\u0600-\u06FF]/.test(String(label)) ? 'rtl' : 'ltr');
       text.setAttribute('unicode-bidi','plaintext');
     }
+  }
+
+  function buildMobileHtmlLegend(items, palette) {
+    const legend = add('div','pie-html-legend-v25');
+    legend.setAttribute('dir','rtl');
+    items.forEach((label,i) => {
+      const row = add('div','pie-html-legend-row-v25');
+      const dot = add('span','pie-html-legend-dot-v25');
+      dot.style.background = palette[i % palette.length];
+      const text = add('span','pie-html-legend-text-v25',String(label));
+      row.append(dot,text);
+      legend.append(row);
+    });
+    return legend;
   }
 
   window.chart = function patchedChart(c, host) {
@@ -89,19 +100,16 @@
     let legendPosition = ['right','bottom','none'].includes(cfg.legendPosition) ? cfg.legendPosition : 'right';
     if (mobile && legendPosition === 'right') legendPosition = 'bottom';
 
-    const b = add('div', 'block pie-block-v24');
+    const b = add('div', 'block pie-block-v25');
     const h = add('h3', null, c.title || '');
-    const w = add('div', 'chart pie-chart-v24');
+    const w = add('div', 'chart pie-chart-v25');
     if (cfg.titleSize) h.style.fontSize = cfg.titleSize;
-    const requestedHeight = pxNumber(cfg.chartHeight, mobile ? 500 : 380, 320, 680);
+    const requestedHeight = pxNumber(cfg.chartHeight, mobile ? 420 : 380, 320, 680);
     w.style.minHeight = requestedHeight + 'px';
 
     const cats = Array.isArray(c.categories) ? c.categories : [];
-    const shownCount = Math.min(cats.length,8);
-    const mobileLegendRows = Math.max(1, shownCount);
-    const mobileHeight = 430 + mobileLegendRows * 42;
     const view = mobile
-      ? (legendPosition === 'none' ? '0 0 460 410' : `0 0 460 ${Math.max(560,mobileHeight)}`)
+      ? '0 0 460 410'
       : (legendPosition === 'bottom' ? '0 0 760 540' : '0 0 760 430');
     const s = se('svg', { viewBox:view, preserveAspectRatio:'xMidYMid meet' });
     w.append(s); b.append(h, w); host.append(b);
@@ -141,18 +149,14 @@
 
     if (legendPosition !== 'none') {
       const shown = cats.slice(0,8);
-      if (legendPosition === 'right' && !mobile) {
+      if (mobile) {
+        // SVG bidi/anchor handling on Safari can place the colored marker over
+        // Arabic text. Render the mobile legend as normal HTML instead.
+        w.append(buildMobileHtmlLegend(shown,palette));
+      } else if (legendPosition === 'right') {
         shown.forEach((cat,i)=>{
           const y=88+i*42;
           addLegendItem(s,500,y,String(cat).slice(0,28),palette[i%palette.length],false,'start');
-        });
-      } else if (mobile) {
-        // Put marker on the far right and text to its left. This avoids the
-        // colored marker sitting on top of Arabic labels.
-        const startY = 405;
-        shown.forEach((cat,i)=>{
-          const y = startY + i*42;
-          addLegendItem(s,420,y,String(cat).slice(0,38),palette[i%palette.length],true,'end');
         });
       } else {
         const columns = 2, startY = 410, colWidth = 340, startX = 55;
@@ -172,17 +176,23 @@
 
   const css=document.createElement('style');
   css.textContent=`
-    .pie-block-v24 h3{font-size:clamp(20px,3vw,28px);line-height:1.45;margin:4px 0 14px}
-    .pie-chart-v24{overflow:hidden;display:flex;align-items:center;justify-content:center}
-    .pie-chart-v24 svg{min-width:0!important;width:100%;max-width:100%;height:auto;display:block}
+    .pie-block-v25 h3{font-size:clamp(20px,3vw,28px);line-height:1.45;margin:4px 0 14px}
+    .pie-chart-v25{overflow:hidden;display:flex;align-items:center;justify-content:center}
+    .pie-chart-v25 svg{min-width:0!important;width:100%;max-width:100%;height:auto;display:block}
+    .pie-html-legend-v25{width:100%;display:flex;flex-direction:column;gap:12px;padding:8px 20px 4px}
+    .pie-html-legend-row-v25{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;min-height:28px;color:#52677a;font-size:16px;line-height:1.45}
+    .pie-html-legend-dot-v25{display:block;flex:0 0 12px;width:12px;height:12px;border-radius:999px}
+    .pie-html-legend-text-v25{display:block;min-width:0;overflow-wrap:anywhere;text-align:right}
     .chart svg text{font-family:Tajawal,"Segoe UI",Tahoma,Arial,sans-serif}
     @media(max-width:620px){
-      .pie-block-v24 h3{font-size:clamp(21px,5.5vw,28px);margin-bottom:10px}
-      .pie-chart-v24{overflow:hidden!important}
-      .pie-chart-v24 svg{width:100%;min-width:0!important;min-height:470px}
-      .block:not(.pie-block-v24) .chart{overflow-x:auto;padding-bottom:64px}
-      .block:not(.pie-block-v24) .chart svg{overflow:visible}
-      .block:not(.pie-block-v24) .chart svg text{font-weight:500}
+      .pie-block-v25 h3{font-size:clamp(21px,5.5vw,28px);margin-bottom:10px}
+      .pie-chart-v25{overflow:hidden!important;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;min-height:0!important}
+      .pie-chart-v25 svg{width:100%;min-width:0!important;height:auto;min-height:0}
+      .pie-html-legend-v25{padding:2px 8px 10px;gap:10px}
+      .pie-html-legend-row-v25{font-size:17px;gap:11px}
+      .block:not(.pie-block-v25) .chart{overflow-x:auto;padding-bottom:64px}
+      .block:not(.pie-block-v25) .chart svg{overflow:visible}
+      .block:not(.pie-block-v25) .chart svg text{font-weight:500}
     }
   `;
   document.head.append(css);
