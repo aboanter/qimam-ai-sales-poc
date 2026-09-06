@@ -1,6 +1,6 @@
 // Deterministic post-presentation validator.
 // Runs after structured-preload has inflated the UI JSON and before server.js returns it.
-require('./structured-preload.js');
+require('./section-design-v32-preload.js');
 
 const structuredFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
