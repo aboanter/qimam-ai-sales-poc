@@ -34,4 +34,5 @@
     const card=host.closest('.card');if(card){card.style.background=safeColor(d.cardBackground,d.background||'#ffffff');card.style.borderColor=safeColor(d.borderColor,'#dfeaec');card.style.borderRadius=safeLen(d.outerRadius,d.radius||'22px',10,44);if(d.surfaceStyle==='flat')card.style.boxShadow='none';else if(typeof d.shadow==='string'&&d.shadow.length<160&&!/url\s*\(|javascript:|expression\s*\(/i.test(d.shadow))card.style.boxShadow=d.shadow}
   }
   window.render=function designSystemRender(schema,host){applyDesign(schema,host);return originalRender(schema,host)};
+  if(!document.querySelector('script[data-qimam-section-v31]')){const sc=document.createElement('script');sc.src='/section-composition-v31.js';sc.dataset.qimamSectionV31='1';document.head.appendChild(sc)}
 })();
