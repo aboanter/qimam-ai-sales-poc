@@ -34,7 +34,8 @@
     const card=host.closest('.card');if(card){card.style.background=safeColor(d.cardBackground,d.background||'#ffffff');card.style.borderColor=safeColor(d.borderColor,'#dfeaec');card.style.borderRadius=safeLen(d.outerRadius,d.radius||'22px',10,44);if(d.surfaceStyle==='flat')card.style.boxShadow='none';else if(typeof d.shadow==='string'&&d.shadow.length<160&&!/url\s*\(|javascript:|expression\s*\(/i.test(d.shadow))card.style.boxShadow=d.shadow}
   }
   window.render=function designSystemRender(schema,host){applyDesign(schema,host);return originalRender(schema,host)};
-  function loadScript(src,key){if(document.querySelector(`script[data-${key}]`))return;const sc=document.createElement('script');sc.src=src;sc.setAttribute(`data-${key}`,'1');document.head.appendChild(sc)}
+  function loadScript(src,key){if(document.querySelector(`script[data-${key}]`))return;const sc=document.createElement('script');sc.src=src;sc.async=false;sc.setAttribute(`data-${key}`,'1');document.head.appendChild(sc)}
   loadScript('/section-composition-v31.js','qimam-section-v31');
   loadScript('/section-design-v32.js','qimam-section-v32');
+  loadScript('/section-renderer-v33.js','qimam-section-v33');
 })();
