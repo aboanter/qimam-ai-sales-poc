@@ -16,7 +16,7 @@
 .qimam-design-v30 .tablewrap td{color:var(--q-text);border-bottom-color:var(--q-border)}
 .qimam-design-v30 .insight:not([style*="background"]){background:var(--q-surface2);color:var(--q-text);border:1px solid var(--q-border)}
 .qimam-design-v30 .lay-section.soft{background:var(--q-surface2);border-color:var(--q-border);border-radius:var(--q-radius)}
-.qimam-design-v30 .lay-section.accent{background:linear-gradient(135deg,color-mix(in srgb,var(--q-accent) 10%,var(--q-surface)),var(--q-surface));border-color:color-mix(in srgb,var(--q-accent) 25%,var(--q-border));border-radius:var(--q-radius)}
+.qimam-design-v30 .lay-section.accent{background:linear-gradient(135deg,#f0fbfa,#f8fcff);border-color:color-mix(in srgb,var(--q-accent) 25%,var(--q-border));border-radius:var(--q-radius)}
 .qimam-design-v30.qimam-density-compact{--q-gap:10px;--q-section-gap:15px;--q-pad:14px}.qimam-design-v30.qimam-density-spacious{--q-gap:18px;--q-section-gap:30px;--q-pad:26px}
 .qimam-design-v30.qimam-surface-flat .kpi,.qimam-design-v30.qimam-surface-flat .tablewrap,.qimam-design-v30.qimam-surface-flat .insight{box-shadow:none!important}
 .qimam-design-v30.qimam-surface-elevated .kpi,.qimam-design-v30.qimam-surface-elevated .tablewrap,.qimam-design-v30.qimam-surface-elevated .insight{box-shadow:var(--q-shadow)}
@@ -34,5 +34,7 @@
     const card=host.closest('.card');if(card){card.style.background=safeColor(d.cardBackground,d.background||'#ffffff');card.style.borderColor=safeColor(d.borderColor,'#dfeaec');card.style.borderRadius=safeLen(d.outerRadius,d.radius||'22px',10,44);if(d.surfaceStyle==='flat')card.style.boxShadow='none';else if(typeof d.shadow==='string'&&d.shadow.length<160&&!/url\s*\(|javascript:|expression\s*\(/i.test(d.shadow))card.style.boxShadow=d.shadow}
   }
   window.render=function designSystemRender(schema,host){applyDesign(schema,host);return originalRender(schema,host)};
-  if(!document.querySelector('script[data-qimam-section-v31]')){const sc=document.createElement('script');sc.src='/section-composition-v31.js';sc.dataset.qimamSectionV31='1';document.head.appendChild(sc)}
+  function loadScript(src,key){if(document.querySelector(`script[data-${key}]`))return;const sc=document.createElement('script');sc.src=src;sc.setAttribute(`data-${key}`,'1');document.head.appendChild(sc)}
+  loadScript('/section-composition-v31.js','qimam-section-v31');
+  loadScript('/section-design-v32.js','qimam-section-v32');
 })();
