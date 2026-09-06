@@ -8,7 +8,7 @@ app.get('/', (req,res,next) => {
   try {
     const indexPath = path.join(__dirname, 'public', 'index.html');
     let html = fs.readFileSync(indexPath, 'utf8');
-    html = html.replace('</body>', '<script src="/chart-patch.js"></script></body>');
+    html = html.replace('</body>', '<script src="/chart-patch.js"></script><script src="/design-system-v30.js"></script></body>');
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
