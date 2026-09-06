@@ -1,4 +1,4 @@
-// Structured coverage guard V3.2.1 — enforces minimum component breadth only for broad dashboard requests.
+// Structured coverage guard V3.2.2 — broad-dashboard coverage guidance without unsupported JSON Schema constraints.
 const upstreamFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
 
@@ -23,25 +23,21 @@ function coverageScore(question){
   ];
   return checks.reduce((n,re)=>n+(re.test(q)?1:0),0);
 }
-function clone(v){return JSON.parse(JSON.stringify(v))}
 
 global.fetch = async function coverageSchemaFetch(url,options={}){
   try{
     if(String(url).includes('api.anthropic.com/v1/messages')&&options.body){
       const body=JSON.parse(options.body);
       if(body?.system===PRESENTATION_SYSTEM && coverageScore(originalQuestion(body))>=4){
-        const format=body?.output_config?.format;
-        if(format?.type==='json_schema'&&format.schema?.properties?.components){
-          body.output_config={...body.output_config,format:{...format,schema:clone(format.schema)}};
-          const components=body.output_config.format.schema.properties.components;
-          components.minItems=6;
-          components.maxItems=12;
-          const msg=body.messages?.[body.messages.length-1];
-          if(msg&&typeof msg.content==='string'&&!msg.content.includes('STRUCTURED COVERAGE GUARD V3.2.1')){
-            msg.content+='\n\nSTRUCTURED COVERAGE GUARD V3.2.1 — The JSON schema requires at least 6 components for this broad dashboard request. Use those slots for genuine requested content: executive KPIs, trend analysis, customer/ranking analysis, detail table and insights. Do not create filler or duplicate cards merely to satisfy the count.';
-          }
-          options={...options,body:JSON.stringify(body)};
+        // Anthropic structured output currently accepts array minItems only as 0 or 1.
+        // Do NOT mutate the JSON schema to minItems=6/maxItems=12. Coverage is enforced
+        // by explicit generation requirements plus the deterministic thin-dashboard retry
+        // in section-design-v32-preload.js.
+        const msg=body.messages?.[body.messages.length-1];
+        if(msg&&typeof msg.content==='string'&&!msg.content.includes('STRUCTURED COVERAGE GUARD V3.2.2')){
+          msg.content+='\n\nSTRUCTURED COVERAGE GUARD V3.2.2 — This is a broad dashboard request. Return a complete report with genuine breadth, normally 6-10 useful components when evidence supports it. Preserve distinct requested outputs: executive KPIs, time trend, customer/ranking analysis, detailed table, and insights. Do not collapse the report into one hero KPI, and do not create filler or duplicate cards.';
         }
+        options={...options,body:JSON.stringify(body)};
       }
     }
   }catch(e){console.error('coverage-schema-preload non-fatal error:',e.message)}
