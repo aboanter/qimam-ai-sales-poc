@@ -1,5 +1,5 @@
 // Generative Section Design Language V3.2 — lets the presentation model author section hierarchy.
-require('./structured-preload.js');
+require('./coverage-schema-preload.js');
 
 const upstreamFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
@@ -35,7 +35,7 @@ function addMetadataToPayload(payload){
   if(!Array.isArray(payload?.content))return payload;
   for(const block of payload.content){
     if(block&&block.type==='text'&&typeof block.text==='string'){
-      try{const ui=JSON.parse(block.text);ui.sectionDesignLanguageVersion='3.2';block.text=JSON.stringify(ui);}catch{}
+      try{const ui=JSON.parse(block.text);ui.sectionDesignLanguageVersion='3.2';ui.structuredCoverageGuardVersion='3.2.1';block.text=JSON.stringify(ui);}catch{}
     }
   }
   return payload;
