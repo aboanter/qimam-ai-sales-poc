@@ -1,58 +1,75 @@
-// Background Jobs Client V1 — submit once, let the server continue, resume when the browser returns.
+// Background Jobs Client V1.1 — submit once, let the server continue, resume reliably when the browser returns.
 (function(){
   const STORAGE_KEY='qimam_active_background_job_v1';
   const POLL_MS=2500;
-  let timer=null,currentId=null,currentCard=null;
+  let timer=null,currentId=null,currentCard=null,polling=false,lastCheckedAt=0;
 
   function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!=null)x.textContent=text;return x}
   function phaseText(p){return ({queued:'تم استلام الطلب وسنبدأ المعالجة',planning:'نحلل السؤال ونبني خطة الاستعلام',querying_odoo:'نجلب البيانات من Odoo',designing_report:'نحلل النتائج ونبني التقرير',done:'اكتمل التقرير',failed:'فشل تنفيذ الطلب'})[p]||'جاري العمل على الطلب'}
   function setStored(id,question){try{if(id)localStorage.setItem(STORAGE_KEY,JSON.stringify({id,question,at:Date.now()}));else localStorage.removeItem(STORAGE_KEY)}catch{}}
   function getStored(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null')}catch{return null}}
+  function timeLabel(){return new Intl.DateTimeFormat('ar-SA',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())}
 
+  function activityDots(){const wrap=el('span','qbgjob-dots');wrap.append(el('i'),el('i'),el('i'));return wrap}
   function makeCard(question){
     const feed=document.getElementById('feed');if(!feed)return null;
     const card=el('div','card qbgjob-card');
     const q=el('div','q',question);card.append(q);
     const status=el('div','qbgjob-status');
-    status.append(el('div','qbgjob-orb'),el('div','qbgjob-copy','يتم تجهيز الطلب في الخلفية…'));
-    const note=el('div','qbgjob-note','يمكنك الآن إغلاق الصفحة أو استخدام تطبيق آخر. عند الرجوع سنكمل من نفس الطلب.');
-    card.append(status,note);feed.prepend(card);return card;
+    const orb=el('div','qbgjob-orb');
+    const body=el('div','qbgjob-status-body');
+    const line=el('div','qbgjob-line');line.append(el('div','qbgjob-copy','يتم تجهيز الطلب في الخلفية…'),activityDots());
+    const checked=el('div','qbgjob-checked','بانتظار أول تحديث…');
+    body.append(line,checked);status.append(orb,body);
+    const actions=el('div','qbgjob-actions');
+    const refresh=el('button','qbgjob-refresh','↻ تحديث الحالة الآن');refresh.type='button';
+    refresh.addEventListener('click',()=>{if(currentId){clearTimeout(timer);timer=null;poll(true)}});
+    actions.append(refresh);
+    const note=el('div','qbgjob-note','يمكنك إغلاق الصفحة أو استخدام تطبيق آخر. عند الرجوع سنستأنف متابعة نفس الطلب.');
+    card.append(status,actions,note);feed.prepend(card);return card;
   }
-  function updateCard(card,job){if(!card)return;const copy=card.querySelector('.qbgjob-copy');if(copy)copy.textContent=phaseText(job.phase);const note=card.querySelector('.qbgjob-note');if(note&&job.status==='running')note.textContent='المعالجة مستمرة على السيرفر، ولا تحتاج إبقاء الصفحة مفتوحة.'}
-  function showError(card,msg){if(!card)return;const s=card.querySelector('.qbgjob-status');if(s){s.className='qbgjob-status qbgjob-error';s.replaceChildren(el('div','qbgjob-copy',msg||'فشل الطلب'))}const n=card.querySelector('.qbgjob-note');if(n)n.textContent='يمكنك إعادة المحاولة من نفس السؤال.'}
+  function setChecking(card,on){if(!card)return;const b=card.querySelector('.qbgjob-refresh');if(b){b.disabled=!!on;b.textContent=on?'جارٍ التحقق…':'↻ تحديث الحالة الآن'}const dots=card.querySelector('.qbgjob-dots');if(dots)dots.classList.toggle('paused',!on&&document.visibilityState!=='visible')}
+  function updateCard(card,job){if(!card)return;const copy=card.querySelector('.qbgjob-copy');if(copy)copy.textContent=phaseText(job.phase);const checked=card.querySelector('.qbgjob-checked');if(checked){const serverAge=job.updatedAt?Math.max(0,Math.round((Date.now()-job.updatedAt)/1000)):null;checked.textContent=`آخر تحقق: ${timeLabel()}${serverAge!=null?' · تحديث السيرفر قبل '+serverAge+' ث':''}`;}const note=card.querySelector('.qbgjob-note');if(note&&job.status==='running')note.textContent='المعالجة مستمرة على السيرفر. يمكنك الخروج من Safari والرجوع لاحقاً.';lastCheckedAt=Date.now()}
+  function showTransient(card,msg){const checked=card?.querySelector('.qbgjob-checked');if(checked)checked.textContent=msg+' · سنحاول تلقائياً مرة أخرى.'}
+  function showError(card,msg){if(!card)return;const s=card.querySelector('.qbgjob-status');if(s){s.className='qbgjob-status qbgjob-error';s.replaceChildren(el('div','qbgjob-copy',msg||'فشل الطلب'))}const a=card.querySelector('.qbgjob-actions');if(a)a.remove();const n=card.querySelector('.qbgjob-note');if(n)n.textContent='يمكنك إعادة المحاولة من نفس السؤال.'}
   function showResult(card,job){
     if(!card||!job?.result?.schema)return showError(card,'اكتمل الطلب لكن لم تصل نتيجة قابلة للعرض.');
-    card.querySelector('.qbgjob-status')?.remove();card.querySelector('.qbgjob-note')?.remove();
+    card.querySelector('.qbgjob-status')?.remove();card.querySelector('.qbgjob-actions')?.remove();card.querySelector('.qbgjob-note')?.remove();
     const host=el('div','qbgjob-result');card.append(host);
     try{if(typeof window.render==='function')window.render(job.result.schema,host);else throw new Error('Renderer is not ready');}
     catch(e){showError(card,'تعذر عرض التقرير: '+e.message);return}
     const details=document.createElement('details');details.className='debug';const sum=document.createElement('summary');sum.textContent='JSON';const pre=document.createElement('pre');pre.textContent=JSON.stringify(job.result.schema,null,2);details.append(sum,pre);card.append(details);
   }
 
-  async function getJob(id){const r=await fetch('/api/jobs/'+encodeURIComponent(id),{cache:'no-store'});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'تعذر استرجاع حالة الطلب');return d.job}
-  async function poll(){
-    if(!currentId)return;
+  async function getJob(id){const r=await fetch('/api/jobs/'+encodeURIComponent(id)+'?t='+Date.now(),{cache:'no-store',headers:{'cache-control':'no-cache'}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'تعذر استرجاع حالة الطلب');return d.job}
+  function schedule(){clearTimeout(timer);if(currentId)timer=setTimeout(()=>poll(false),POLL_MS)}
+  async function poll(manual=false){
+    if(!currentId||polling)return;
+    polling=true;setChecking(currentCard,true);
     try{
       const job=await getJob(currentId);updateCard(currentCard,job);
       if(job.status==='done'){clearTimeout(timer);timer=null;showResult(currentCard,job);setStored(null);currentId=null;return}
       if(job.status==='failed'){clearTimeout(timer);timer=null;showError(currentCard,job.error?.message||'فشل الطلب');setStored(null);currentId=null;return}
     }catch(e){
-      // Network loss or iOS suspension should not destroy the job. Keep the id and retry later.
-      if(document.visibilityState==='visible')updateCard(currentCard,{phase:'queued'});
+      // Network loss or iOS suspension must never destroy the job id.
+      showTransient(currentCard,manual?('تعذر التحديث: '+e.message):'الاتصال متوقف مؤقتاً');
+    }finally{
+      polling=false;setChecking(currentCard,false);if(currentId)schedule();
     }
-    clearTimeout(timer);timer=setTimeout(poll,POLL_MS);
   }
 
   async function submit(question){
     if(currentId)return;
     currentCard=makeCard(question);
     try{
+      setChecking(currentCard,true);
       const r=await fetch('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question})});
       const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'تعذر بدء الطلب');
-      currentId=d.job.id;setStored(currentId,question);updateCard(currentCard,d.job);poll();
-    }catch(e){showError(currentCard,e.message)}
+      currentId=d.job.id;setStored(currentId,question);updateCard(currentCard,d.job);poll(false);
+    }catch(e){showError(currentCard,e.message)}finally{setChecking(currentCard,false)}
   }
 
+  function resumeNow(){if(!currentId)return;clearTimeout(timer);timer=null;poll(true)}
   function install(){
     const button=document.getElementById('go'),input=document.getElementById('q');if(!button||!input)return;
     document.addEventListener('click',function(ev){
@@ -62,17 +79,20 @@
       submit(question);
     },true);
 
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&currentId){clearTimeout(timer);poll()}});
-    window.addEventListener('pageshow',()=>{if(currentId){clearTimeout(timer);poll()}});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resumeNow()});
+    window.addEventListener('pageshow',resumeNow);
+    window.addEventListener('focus',resumeNow);
+    window.addEventListener('online',resumeNow);
 
-    const saved=getStored();if(saved?.id){currentId=saved.id;currentCard=makeCard(saved.question||'استكمال الطلب السابق');poll()}
+    const saved=getStored();if(saved?.id){currentId=saved.id;currentCard=makeCard(saved.question||'استكمال الطلب السابق');poll(true)}
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 
   if(!document.getElementById('qimam-background-jobs-v1-css')){
     const s=document.createElement('style');s.id='qimam-background-jobs-v1-css';s.textContent=`
-.qbgjob-status{display:flex;align-items:center;gap:14px;padding:18px;border-radius:18px;background:#f6fbfb;border:1px solid #dceced}.qbgjob-orb{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#0b9da6,#087789);box-shadow:0 9px 24px rgba(11,157,166,.18);animation:qbgpulse 1.6s ease-in-out infinite;flex:0 0 auto}.qbgjob-copy{font-weight:800;color:#173b54;line-height:1.7}.qbgjob-note{margin-top:10px;color:#648092;font-size:12px;line-height:1.8}.qbgjob-error{background:#fef2f2;border-color:#fee2e2}.qbgjob-error .qbgjob-copy{color:#991b1b}.qbgjob-result{min-width:0}@keyframes qbgpulse{50%{transform:scale(1.06);opacity:.78}}
+.qbgjob-status{display:flex;align-items:center;gap:14px;padding:18px;border-radius:18px;background:#f6fbfb;border:1px solid #dceced}.qbgjob-status-body{min-width:0;flex:1}.qbgjob-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.qbgjob-orb{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#0b9da6,#087789);box-shadow:0 9px 24px rgba(11,157,166,.18);animation:qbgpulse 1.6s ease-in-out infinite;flex:0 0 auto}.qbgjob-copy{font-weight:800;color:#173b54;line-height:1.7}.qbgjob-checked{margin-top:4px;color:#78909f;font-size:11px;line-height:1.5}.qbgjob-dots{display:inline-flex;gap:5px;align-items:center}.qbgjob-dots i{width:7px;height:7px;border-radius:50%;background:#0b9da6;animation:qbgdot 1.1s infinite}.qbgjob-dots i:nth-child(2){animation-delay:.18s}.qbgjob-dots i:nth-child(3){animation-delay:.36s}.qbgjob-dots.paused i{animation-play-state:paused;opacity:.35}.qbgjob-actions{display:flex;justify-content:flex-start;margin-top:10px}.qbgjob-refresh{border:1px solid #b9dfe1;background:#fff;color:#087f88;border-radius:12px;padding:9px 13px;font:inherit;font-size:12px;font-weight:800}.qbgjob-refresh:disabled{opacity:.55}.qbgjob-note{margin-top:10px;color:#648092;font-size:12px;line-height:1.8}.qbgjob-error{background:#fef2f2;border-color:#fee2e2}.qbgjob-error .qbgjob-copy{color:#991b1b}.qbgjob-result{min-width:0}@keyframes qbgpulse{50%{transform:scale(1.06);opacity:.78}}@keyframes qbgdot{0%,100%{transform:scale(.72);opacity:.35}50%{transform:scale(1.15);opacity:1}}
+@media(max-width:620px){.qbgjob-status{align-items:flex-start;padding:15px}.qbgjob-line{gap:8px}.qbgjob-refresh{width:100%;padding:11px}}
 `;
     document.head.appendChild(s);
   }
