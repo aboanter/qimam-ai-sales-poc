@@ -39,4 +39,5 @@
   loadScript('/section-design-v32.js','qimam-section-v32');
   loadScript('/section-renderer-v33.js','qimam-section-v33');
   loadScript('/insight-renderer-v331.js','qimam-insight-v331');
+  loadScript('/background-jobs-v1.js','qimam-background-jobs-v1');
 })();
