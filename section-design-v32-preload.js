@@ -1,4 +1,4 @@
-// Generative Section Design Language V3.5 — compact Claude art direction + deterministic local coverage repair.
+// Generative Section Design Language V3.5.1 — compact Claude art direction + deterministic local coverage repair.
 require('./coverage-schema-preload.js');
 
 const upstreamFetch = global.fetch;
@@ -86,7 +86,7 @@ function valueKey(keys){return findKey(keys,/(amount_total|price_total|revenue|s
 function countKey(keys){return findKey(keys,/^__count$/i)||findKey(keys,/(order|id|record).*_count$/i)||null}
 function dateKey(keys){return findKey(keys,/(date_order|invoice_date|date).*(:month|month)/i)||findKey(keys,/(month|period|date)/i)||null}
 function customerKey(keys){return findKey(keys,/(partner_id|customer|client|partner)/i)||null}
-function statusKey(keys){return findKey(keys,/(invoice_status|state|status)/i)||null}
+function statusKey(keys){return findKey(keys,/(invoice_status|payment_state|state|status)/i)||null}
 function operationCatalog(envelope){
   const ops=Array.isArray(envelope?.plan?.operations)?envelope.plan.operations:[];
   return ops.map((op,i)=>{const name=opName(op,i),rows=sourceRows(envelope,name),keys=keysOfRows(rows),groupby=Array.isArray(op?.arguments?.groupby)?op.arguments.groupby:[];return{name,op,rows,keys,groupby:[...groupby],valueKey:valueKey(keys),countKey:countKey(keys),dateKey:dateKey(keys),customerKey:customerKey(keys),statusKey:statusKey(keys)}});
@@ -103,11 +103,24 @@ function chronologicalPairs(rows,labelKey,valKey){
   return rows.map(r=>({label:labelOf(getField(r,labelKey)),value:numOf(getField(r,valKey))})).filter(x=>x.label&&Number.isFinite(x.value)).sort((a,b)=>{const ad=Date.parse(a.label),bd=Date.parse(b.label);if(Number.isFinite(ad)&&Number.isFinite(bd))return ad-bd;return a.label.localeCompare(b.label)});
 }
 function rankedPairs(rows,labelKey,valKey,limit=10){return rows.map(r=>({label:labelOf(getField(r,labelKey)),value:numOf(getField(r,valKey)),row:r})).filter(x=>x.label&&Number.isFinite(x.value)).sort((a,b)=>b.value-a.value).slice(0,limit)}
+function groupedPairs(rows,labelKey,valKey,limit=10){
+  const grouped=new Map();
+  for(const r of rows){const label=labelOf(getField(r,labelKey)).trim(),value=numOf(getField(r,valKey));if(!label||!Number.isFinite(value))continue;grouped.set(label,(grouped.get(label)||0)+value)}
+  return [...grouped.entries()].map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,limit);
+}
+function validStatusDistribution(op){
+  if(!op||!op.statusKey||!op.valueKey||!op.rows.length)return[];
+  const pairs=groupedPairs(op.rows,op.statusKey,op.valueKey,6);
+  // A distribution needs at least two genuinely different categories. Repeated raw rows
+  // with the same state (e.g. six "invoiced" rows) are NOT a meaningful pie chart.
+  if(pairs.length<2)return[];
+  return pairs;
+}
 function requestedBroad(question){const q=String(question||'');return /(dashboard|لوحة|تقرير\s+مبيعات|تقرير\s+شامل|executive)/i.test(q)&&[/kpi|مؤشر/i,/شهري|اتجاه|monthly|trend/i,/عميل|عملاء|customer/i,/جدول|table/i,/تحليل|ملاحظات|insight/i].filter(re=>re.test(q)).length>=3}
 function localRepair(ui,envelope){
-  const report={applied:false,added:[],reason:null};if(!ui||!Array.isArray(ui.components)||!envelope||!requestedBroad(envelope.question))return report;
+  const report={applied:false,added:[],skipped:[],reason:null};if(!ui||!Array.isArray(ui.components)||!envelope||!requestedBroad(envelope.question))return report;
   const before=coverageStats(ui);if(!isThin(before))return report;
-  const cat=operationCatalog(envelope);const monthly=cat.find(x=>x.rows.length&&x.dateKey&&x.valueKey);const customers=cat.find(x=>x.rows.length&&x.customerKey&&x.valueKey);const statuses=cat.find(x=>x.rows.length&&x.statusKey&&x.valueKey);
+  const cat=operationCatalog(envelope);const monthly=cat.find(x=>x.rows.length&&x.dateKey&&x.valueKey);const customers=cat.find(x=>x.rows.length&&x.customerKey&&x.valueKey);const statusCandidates=cat.filter(x=>x.rows.length&&x.statusKey&&x.valueKey);const statusChoice=statusCandidates.map(x=>({op:x,pairs:validStatusDistribution(x)})).find(x=>x.pairs.length>=2)||null;
   const totalOp=cat.find(x=>x.rows.length&&x.valueKey&&x.rows.length<=3&&!x.dateKey&&!x.customerKey)||cat.find(x=>x.rows.length&&x.valueKey);
   let total=totalOp?sumField(totalOp.rows,totalOp.valueKey):0;let orders=0;
   const countOp=cat.find(x=>x.rows.length&&x.countKey&&x.rows.length<=3)||totalOp; if(countOp)orders=countRows(countOp.rows,countOp.countKey);
@@ -123,7 +136,10 @@ function localRepair(ui,envelope){
   if(!hasTrend(ui)&&monthly){const pairs=chronologicalPairs(monthly.rows,monthly.dateKey,monthly.valueKey);if(pairs.length){const c={type:'area_chart',title:'الاتجاه الشهري للمبيعات',id:distinctId('monthly_sales_trend',ui),categories:pairs.map(x=>x.label),series:[{name:'المبيعات',data:pairs.map(x=>x.value)}],componentLayout:{chartHeight:'340px',legendPosition:'none'},section:section('time_trend','الاتجاه الزمني للمبيعات',2,'wide','editorial')};ui.components.push(c);report.added.push(c.id)}}
   if(!hasRanking(ui)&&customers){const pairs=rankedPairs(customers.rows,customers.customerKey,customers.valueKey,10);if(pairs.length){const c={type:'bar_chart',title:'أعلى العملاء من حيث المبيعات',id:distinctId('top_customers_chart',ui),categories:pairs.map(x=>x.label),series:[{name:'المبيعات',data:pairs.map(x=>x.value)}],componentLayout:{chartHeight:'320px',legendPosition:'none'},section:section('customer_analysis','تحليل العملاء',3,'split','panel')};ui.components.push(c);report.added.push(c.id)}}
   if(!hasType(ui,'table')&&customers){const pairs=rankedPairs(customers.rows,customers.customerKey,customers.valueKey,10);if(pairs.length){const cols=['العميل','إجمالي المبيعات (ر.س)'];if(customers.countKey)cols.push('عدد الطلبات');const rows=pairs.map(x=>{const r=[x.label,x.value];if(customers.countKey)r.push(numOf(getField(x.row,customers.countKey))??0);return r});const c={type:'table',title:'جدول تفصيلي — أبرز العملاء',id:distinctId('top_customers_table',ui),columns:cols,rows,section:section('detail_table','تفاصيل العملاء',4,'wide','plain')};ui.components.push(c);report.added.push(c.id)}}
-  if(statuses&&!ui.components.some(c=>c.type==='pie_chart')){const pairs=rankedPairs(statuses.rows,statuses.statusKey,statuses.valueKey,6);if(pairs.length>1){const c={type:'pie_chart',title:'توزيع المبيعات بحسب الحالة',id:distinctId('sales_status_pie',ui),categories:pairs.map(x=>x.label),series:[{name:'القيمة',data:pairs.map(x=>x.value)}],componentLayout:{chartHeight:'280px',legendPosition:'bottom'},section:{id:'customer_analysis',order:3}};ui.components.push(c);report.added.push(c.id)}}
+  if(!ui.components.some(c=>c.type==='pie_chart')){
+    if(statusChoice){const pairs=statusChoice.pairs;const c={type:'pie_chart',title:'توزيع المبيعات بحسب الحالة',id:distinctId('sales_status_pie',ui),categories:pairs.map(x=>x.label),series:[{name:'القيمة',data:pairs.map(x=>x.value)}],componentLayout:{chartHeight:'280px',legendPosition:'bottom'},section:{id:'customer_analysis',order:3}};ui.components.push(c);report.added.push(c.id)}
+    else if(statusCandidates.length)report.skipped.push('sales_status_pie:no_distinct_status_categories');
+  }
   if(!hasType(ui,'insight')){
     const items=[];
     if(customers&&total){const top=rankedPairs(customers.rows,customers.customerKey,customers.valueKey,1)[0];if(top)items.push({text:`أعلى عميل هو ${top.label} بمبيعات ${top.value.toLocaleString('en-US',{maximumFractionDigits:2})} ر.س، بما يعادل ${(top.value/total*100).toFixed(1)}% من الإجمالي.`})}
@@ -135,14 +151,14 @@ function localRepair(ui,envelope){
 }
 function coverageStats(ui){const comps=Array.isArray(ui?.components)?ui.components:[];const types=comps.map(c=>c?.type);return{components:comps.length,kpis:types.filter(t=>t==='kpi').length,hasTrend:hasTrend(ui),hasRanking:hasRanking(ui),hasTable:types.includes('table'),hasInsight:types.includes('insight')}}
 function isThin(stats){return stats.components<6||stats.kpis<3||!stats.hasTrend||!stats.hasRanking||!stats.hasTable||!stats.hasInsight}
-function addMetadata(payload,diag,envelope){if(!Array.isArray(payload?.content))return payload;for(const block of payload.content){if(block&&block.type==='text'&&typeof block.text==='string'){try{const ui=JSON.parse(block.text);diag.binding=hydrateUi(ui,envelope);const preRepair=coverageStats(ui);diag.initialThin=isThin(preRepair);diag.localRepair=localRepair(ui,envelope);const stats=coverageStats(ui);diag.finalThin=isThin(stats);diag.coverage=stats;ui.sectionDesignLanguageVersion='3.5';ui.structuredCoverageGuardVersion='3.5';ui.presentationPerformance=diag;ui.dataBindingVersion='1.1';ui.localCoverageRepairVersion='1.0';block.text=JSON.stringify(ui)}catch(e){console.error('section-design-v35 metadata/repair error:',e.message)}}}return payload}
-async function timedFetch(url,options,diag){const started=Date.now();const response=await upstreamFetch(url,options);const ended=Date.now();diag.attempts.push({label:'initial',durationMs:ended-started,durationSeconds:secs(ended-started),httpStatus:response.status});console.log(`[PERF:PRESENT] v35 initial=${secs(ended-started)}s status=${response.status}`);return response}
+function addMetadata(payload,diag,envelope){if(!Array.isArray(payload?.content))return payload;for(const block of payload.content){if(block&&block.type==='text'&&typeof block.text==='string'){try{const ui=JSON.parse(block.text);diag.binding=hydrateUi(ui,envelope);const preRepair=coverageStats(ui);diag.initialThin=isThin(preRepair);diag.localRepair=localRepair(ui,envelope);const stats=coverageStats(ui);diag.finalThin=isThin(stats);diag.coverage=stats;ui.sectionDesignLanguageVersion='3.5.1';ui.structuredCoverageGuardVersion='3.5.1';ui.presentationPerformance=diag;ui.dataBindingVersion='1.1';ui.localCoverageRepairVersion='1.1';block.text=JSON.stringify(ui)}catch(e){console.error('section-design-v351 metadata/repair error:',e.message)}}}return payload}
+async function timedFetch(url,options,diag){const started=Date.now();const response=await upstreamFetch(url,options);const ended=Date.now();diag.attempts.push({label:'initial',durationMs:ended-started,durationSeconds:secs(ended-started),httpStatus:response.status});console.log(`[PERF:PRESENT] v351 initial=${secs(ended-started)}s status=${response.status}`);return response}
 
 global.fetch=async function sectionDesignFetch(url,options={}){
   let body=null,isPresentation=false,envelope=null;
-  try{if(String(url).includes('api.anthropic.com/v1/messages')&&options.body){body=JSON.parse(options.body);isPresentation=isPresentationBody(body);if(isPresentation){envelope=extractEnvelope(body);const msg=lastMessage(body);if(msg&&typeof msg.content==='string'&&!msg.content.includes('SECTION DESIGN LANGUAGE V3.3'))msg.content+=SECTION_INSTRUCTION;options={...options,body:JSON.stringify(body)}}}}catch(e){console.error('section-design-v35 request inspection error:',e.message)}
+  try{if(String(url).includes('api.anthropic.com/v1/messages')&&options.body){body=JSON.parse(options.body);isPresentation=isPresentationBody(body);if(isPresentation){envelope=extractEnvelope(body);const msg=lastMessage(body);if(msg&&typeof msg.content==='string'&&!msg.content.includes('SECTION DESIGN LANGUAGE V3.3'))msg.content+=SECTION_INSTRUCTION;options={...options,body:JSON.stringify(body)}}}}catch(e){console.error('section-design-v351 request inspection error:',e.message)}
   if(!isPresentation)return upstreamFetch(url,options);
   const totalStarted=Date.now();const diag={version:'3.0',mode:'compact_binding_with_local_repair',maxFullRetries:MAX_FULL_RETRIES,attempts:[]};
   const response=await timedFetch(url,options,diag);if(!response.ok)return response;
-  try{const payload=await response.clone().json();diag.totalDurationMs=Date.now()-totalStarted;diag.totalDurationSeconds=secs(diag.totalDurationMs);diag.attemptCount=1;addMetadata(payload,diag,envelope);console.log(`[PERF:PRESENT] v35 total=${diag.totalDurationSeconds}s bound=${diag.binding?.bound||0}/${diag.binding?.total||0} repaired=${diag.localRepair?.added?.length||0}`);return responseFromPayload(payload,response)}catch(e){console.error('section-design-v35 response error:',e.message);return response}
+  try{const payload=await response.clone().json();diag.totalDurationMs=Date.now()-totalStarted;diag.totalDurationSeconds=secs(diag.totalDurationMs);diag.attemptCount=1;addMetadata(payload,diag,envelope);console.log(`[PERF:PRESENT] v351 total=${diag.totalDurationSeconds}s bound=${diag.binding?.bound||0}/${diag.binding?.total||0} repaired=${diag.localRepair?.added?.length||0}`);return responseFromPayload(payload,response)}catch(e){console.error('section-design-v351 response error:',e.message);return response}
 };
