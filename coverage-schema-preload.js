@@ -122,10 +122,7 @@ global.fetch = async function coverageSchemaFetch(url,options={}){
           if(!v33 && !msg.content.includes('STRUCTURED COVERAGE GUARD V3.4.1')){
             msg.content+='\n\nSTRUCTURED COVERAGE GUARD V3.4.1 — Preserve executive KPIs, time trend, customer/ranking analysis, detailed table and insights. Do not collapse a broad report into one hero KPI.';
           }
-          if(v33){
-            body.max_tokens=Math.min(Number(body.max_tokens)||3600,3600);
-            body.metadata={...(body.metadata||{}),qimam_presentation_mode:compacted?'compact_analyst_manifest':'compact_grounded_fallback'};
-          }
+          if(v33)body.max_tokens=Math.min(Number(body.max_tokens)||3600,3600);
           options={...options,body:JSON.stringify(body)};
         }
       }
