@@ -1,111 +1,47 @@
-// Generative Section Design Language V3.2 — lets the presentation model author section hierarchy.
+// Generative Section Design Language V3.2.4 — quality-preserving fast coverage retry + timing diagnostics.
 require('./coverage-schema-preload.js');
 
 const upstreamFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
+const MAX_FULL_RETRIES = 1;
 
-const SECTION_INSTRUCTION = `\n\nSECTION DESIGN LANGUAGE V3.2 — GENERATIVE REPORT COMPOSITION:\n- IMPORTANT: section design is an ENRICHMENT layer, never a reason to remove analytical content. Preserve every explicitly requested output and every distinct analysis goal already supported by the supplied evidence.\n- If the user asks for a summary with key KPIs + a trend + a ranking/top customers + analysis/insights, the final report MUST contain distinct components covering those asks. Do not collapse a multi-part dashboard into a single hero KPI.\n- For designed dashboards/reports with multiple analytical goals, normally compose 3-6 meaningful visual sections instead of a flat sequence of components. This is not a fixed template; section count should follow the story.\n- Section composition is authored by YOU, not selected from fixed report templates. Decide hierarchy from the analytical story and the user's design request.\n- Put an optional \"section\" object INSIDE each component's data JSON. Components that belong together repeat the same section id and section metadata.\n- section object: {\"id\":\"executive_overview\",\"title\":\"نظرة تنفيذية\",\"subtitle\":\"أهم مؤشرات الأداء للعام\",\"presentation\":\"hero|editorial|panel|plain|accent\",\"layout\":\"grid|split|stack|strip|wide\",\"columns\":2|3|4,\"ratio\":\"1:1|2:1|1:2|3:2|2:3\",\"order\":1}.\n- Use section titles/subtitles only when they improve hierarchy. Do not repeat component titles verbatim.\n- presentation is visual intent: hero = dominant opening section; editorial = strong narrative section with generous spacing; panel = contained analytical surface; plain = minimal structure; accent = selectively emphasized section.\n- layout is the internal composition of that section. Use wide/stack for dense tables on narrow screens; use split only when both sides remain useful at realistic widths.\n- A KPI hero may dominate a section while supporting KPIs sit beneath or beside it. A dense customer table should NOT be squeezed beside a chart on mobile.\n- Keep section order intentional: executive signal first, supporting analysis next, details later, insights/conclusions last when appropriate. This is a principle, not a mandatory template.\n- Never use section metadata to hide, merge away, or omit a requested chart/table/KPI. The design hierarchy must sit on top of the analytical coverage, not replace it.\n- If the user explicitly asks for a visual hierarchy or page structure, treat it as a hard requirement.\n- For a designed dashboard, section metadata SHOULD normally be present on most components.\n- Do not put executable HTML/CSS/JS in section metadata.`;
+const SECTION_INSTRUCTION = `\n\nSECTION DESIGN LANGUAGE V3.2 — GENERATIVE REPORT COMPOSITION:\n- IMPORTANT: section design is an ENRICHMENT layer, never a reason to remove analytical content. Preserve every explicitly requested output and every distinct analysis goal already supported by the supplied evidence.\n- If the user asks for a summary with key KPIs + a trend + a ranking/top customers + analysis/insights, the final report MUST contain distinct components covering those asks. Do not collapse a multi-part dashboard into a single hero KPI.\n- For designed dashboards/reports with multiple analytical goals, normally compose 3-6 meaningful visual sections instead of a flat sequence of components. This is not a fixed template; section count should follow the story.\n- Section composition is authored by YOU, not selected from fixed report templates. Decide hierarchy from the analytical story and the user's design request.\n- Put an optional \"section\" object INSIDE each component's data JSON. Components that belong together repeat the same section id and section metadata.\n- section object: {\"id\":\"executive_overview\",\"title\":\"نظرة تنفيذية\",\"subtitle\":\"أهم مؤشرات الأداء للعام\",\"presentation\":\"hero|editorial|panel|plain|accent\",\"layout\":\"grid|split|stack|strip|wide\",\"columns\":2|3|4,\"ratio\":\"1:1|2:1|1:2|3:2|2:3\",\"order\":1}.\n- Use section titles/subtitles only when they improve hierarchy. Do not repeat component titles verbatim.\n- presentation is visual intent: hero = dominant opening section; editorial = strong narrative section with generous spacing; panel = contained analytical surface; plain = minimal structure; accent = selectively emphasized section.\n- layout is the internal composition of that section. Use wide/stack for dense tables on narrow screens; use split only when both sides remain useful at realistic widths.\n- A KPI hero may dominate a section while supporting KPIs sit beneath or beside it. A dense customer table should NOT be squeezed beside a chart on mobile.\n- Keep section order intentional: executive signal first, supporting analysis next, details later, insights/conclusions last when appropriate.\n- Never use section metadata to hide, merge away, or omit a requested chart/table/KPI.\n- For a designed dashboard, section metadata SHOULD normally be present on most components.\n- Do not put executable HTML/CSS/JS in section metadata.`;
 
-const CORRECTION_INSTRUCTION = `\n\nSECTION DESIGN COVERAGE CORRECTION — REQUIRED:\nThe previous draft failed the dashboard coverage check. Rebuild the COMPLETE report from the same supplied evidence.\n- This is not a request for one summary KPI. Return the full dashboard.\n- Include distinct components for every requested class that evidence supports: multiple KPI cards, time trend chart, top-customer/ranking chart, detailed table, and insight/analysis component.\n- For a broad executive dashboard, target 7-11 meaningful components, with at least 3 KPI cards plus the requested analytical components.\n- Do not merge a requested table, chart, ranking, or insight into prose.\n- Organize components into meaningful section metadata.\n- Keep all facts grounded in the supplied MCP evidence. Do not invent values.\n- Return the complete JSON report only.`;
+const CORRECTION_INSTRUCTION = `\n\nSECTION DESIGN COVERAGE CORRECTION — REQUIRED:\nThe previous draft failed the dashboard coverage check. Rebuild the COMPLETE report from the same supplied evidence in ONE correction pass.\n- Return the full dashboard, not one summary KPI.\n- Include distinct components for every requested class that evidence supports: multiple KPI cards, time trend chart, top-customer/ranking chart, detailed table, and insight/analysis component.\n- For a broad executive dashboard, target 7-11 meaningful components, with at least 3 KPI cards plus the requested analytical components.\n- Do not merge a requested table, chart, ranking, or insight into prose.\n- Organize components into meaningful section metadata.\n- Keep all facts grounded in supplied MCP evidence. Do not invent values.\n- Return the complete JSON report only.`;
 
-function isPresentationBody(body){return body && body.system===PRESENTATION_SYSTEM && Array.isArray(body.messages);}
-function lastMessage(body){return Array.isArray(body?.messages)?body.messages[body.messages.length-1]:null;}
-function requestedCoverage(text){
-  const s=String(text||'').toLowerCase();
-  const groups=[
-    /(kpi|مؤشر|مؤشرات|إجمالي المبيعات|عدد الطلبات|متوسط قيمة الطلب)/i,
-    /(اتجاه|شهري|الشهرية|trend|monthly)/i,
-    /(أعلى العملاء|افضل العملاء|أفضل العملاء|top customers|ranking|ترتيب العملاء)/i,
-    /(جدول|تفصيلي|table|details)/i,
-    /(ملاحظات|تحليل|تحليلات|insight|analysis|استراتيجي)/i
-  ];
-  return groups.reduce((n,re)=>n+(re.test(s)?1:0),0);
-}
-function uiFromPayload(payload){
-  if(!Array.isArray(payload?.content))return null;
-  for(const block of payload.content){if(block&&block.type==='text'&&typeof block.text==='string'){try{return JSON.parse(block.text)}catch{}}}
-  return null;
-}
-function semanticScore(ui){
-  const comps=Array.isArray(ui?.components)?ui.components:[];
-  const types=comps.map(c=>String(c?.type||''));
-  let score=Math.min(comps.length,12);
-  const kpis=types.filter(t=>t==='kpi').length;
-  if(kpis>=3)score+=6;else score+=kpis;
-  if(comps.some(c=>['line_chart','area_chart','bar_chart'].includes(c?.type)&&/(شهري|اتجاه|monthly|trend|month)/i.test(String(c?.title||''))))score+=5;
-  if(comps.some(c=>['bar_chart','pie_chart','table'].includes(c?.type)&&/(أعلى|اعلى|أفضل|افضل|عميل|عملاء|customer|top|ranking)/i.test(String(c?.title||''))))score+=5;
-  if(types.includes('table'))score+=5;
-  if(types.includes('insight'))score+=5;
-  const sections=new Set(comps.map(c=>c?.section?.id).filter(Boolean));
-  score+=Math.min(sections.size,5);
-  return score;
-}
-function isThinDashboard(ui,body){
-  const msg=lastMessage(body),coverage=requestedCoverage(msg?.content);
-  if(coverage<3)return false;
-  const comps=Array.isArray(ui?.components)?ui.components:[];
-  const kpis=comps.filter(c=>c?.type==='kpi').length;
-  const hasTrend=comps.some(c=>['line_chart','area_chart','bar_chart'].includes(c?.type)&&/(شهري|اتجاه|monthly|trend|month)/i.test(String(c?.title||'')));
-  const hasRanking=comps.some(c=>['bar_chart','pie_chart','table'].includes(c?.type)&&/(أعلى|اعلى|أفضل|افضل|عميل|عملاء|customer|top|ranking)/i.test(String(c?.title||'')));
-  const hasTable=comps.some(c=>c?.type==='table');
-  const hasInsight=comps.some(c=>c?.type==='insight');
-  return comps.length<6 || kpis<3 || !hasTrend || !hasRanking || !hasTable || !hasInsight;
-}
-function addMetadataToPayload(payload){
-  if(!Array.isArray(payload?.content))return payload;
-  for(const block of payload.content){
-    if(block&&block.type==='text'&&typeof block.text==='string'){
-      try{const ui=JSON.parse(block.text);ui.sectionDesignLanguageVersion='3.2';ui.structuredCoverageGuardVersion='3.2.3';block.text=JSON.stringify(ui);}catch{}
-    }
-  }
-  return payload;
-}
-function responseFromPayload(payload,response){
-  const headers=new Headers(response.headers);headers.set('content-type','application/json');
-  return new Response(JSON.stringify(payload),{status:response.status,statusText:response.statusText,headers});
-}
+function isPresentationBody(body){return body&&body.system===PRESENTATION_SYSTEM&&Array.isArray(body.messages)}
+function lastMessage(body){return Array.isArray(body?.messages)?body.messages[body.messages.length-1]:null}
+function requestedCoverage(text){const s=String(text||'').toLowerCase();const groups=[/(kpi|مؤشر|مؤشرات|إجمالي المبيعات|عدد الطلبات|متوسط قيمة الطلب)/i,/(اتجاه|شهري|الشهرية|trend|monthly)/i,/(أعلى العملاء|افضل العملاء|أفضل العملاء|top customers|ranking|ترتيب العملاء)/i,/(جدول|تفصيلي|table|details)/i,/(ملاحظات|تحليل|تحليلات|insight|analysis|استراتيجي)/i];return groups.reduce((n,re)=>n+(re.test(s)?1:0),0)}
+function uiFromPayload(payload){if(!Array.isArray(payload?.content))return null;for(const block of payload.content){if(block&&block.type==='text'&&typeof block.text==='string'){try{return JSON.parse(block.text)}catch{}}}return null}
+function semanticScore(ui){const comps=Array.isArray(ui?.components)?ui.components:[];const types=comps.map(c=>String(c?.type||''));let score=Math.min(comps.length,12);const kpis=types.filter(t=>t==='kpi').length;score+=kpis>=3?6:kpis;if(comps.some(c=>['line_chart','area_chart','bar_chart'].includes(c?.type)&&/(شهري|اتجاه|monthly|trend|month)/i.test(String(c?.title||''))))score+=5;if(comps.some(c=>['bar_chart','pie_chart','table'].includes(c?.type)&&/(أعلى|اعلى|أفضل|افضل|عميل|عملاء|customer|top|ranking)/i.test(String(c?.title||''))))score+=5;if(types.includes('table'))score+=5;if(types.includes('insight'))score+=5;score+=Math.min(new Set(comps.map(c=>c?.section?.id).filter(Boolean)).size,5);return score}
+function isThinDashboard(ui,body){const coverage=requestedCoverage(lastMessage(body)?.content);if(coverage<3)return false;const comps=Array.isArray(ui?.components)?ui.components:[];const kpis=comps.filter(c=>c?.type==='kpi').length;const hasTrend=comps.some(c=>['line_chart','area_chart','bar_chart'].includes(c?.type)&&/(شهري|اتجاه|monthly|trend|month)/i.test(String(c?.title||'')));const hasRanking=comps.some(c=>['bar_chart','pie_chart','table'].includes(c?.type)&&/(أعلى|اعلى|أفضل|افضل|عميل|عملاء|customer|top|ranking)/i.test(String(c?.title||'')));return comps.length<6||kpis<3||!hasTrend||!hasRanking||!comps.some(c=>c?.type==='table')||!comps.some(c=>c?.type==='insight')}
+function addMetadataToPayload(payload,diag){if(!Array.isArray(payload?.content))return payload;for(const block of payload.content){if(block&&block.type==='text'&&typeof block.text==='string'){try{const ui=JSON.parse(block.text);ui.sectionDesignLanguageVersion='3.2';ui.structuredCoverageGuardVersion='3.2.4';ui.presentationPerformance=diag;block.text=JSON.stringify(ui)}catch{}}}return payload}
+function responseFromPayload(payload,response){const headers=new Headers(response.headers);headers.set('content-type','application/json');return new Response(JSON.stringify(payload),{status:response.status,statusText:response.statusText,headers})}
+function secs(ms){return Math.round(ms/100)/10}
 
-global.fetch = async function sectionDesignFetch(url, options={}) {
+async function timedFetch(label,url,options,diag){const started=Date.now();const response=await upstreamFetch(url,options);const ended=Date.now();diag.attempts.push({label,durationMs:ended-started,durationSeconds:secs(ended-started),httpStatus:response.status});console.log(`[PERF:PRESENT] ${label} duration=${secs(ended-started)}s status=${response.status}`);return response}
+
+global.fetch=async function sectionDesignFetch(url,options={}){
   let isPresentation=false,preparedBody=null;
-  try {
-    if(String(url).includes('api.anthropic.com/v1/messages') && options.body){
-      const body=JSON.parse(options.body);
-      isPresentation=isPresentationBody(body);
-      if(isPresentation){
-        const msg=lastMessage(body);
-        if(msg && typeof msg.content==='string' && !msg.content.includes('SECTION DESIGN LANGUAGE V3.2')) msg.content += SECTION_INSTRUCTION;
-        preparedBody=body;
-        options={...options,body:JSON.stringify(body)};
-      }
-    }
-  } catch(e){ console.error('section-design-v32 request inspection error:',e.message); }
+  try{if(String(url).includes('api.anthropic.com/v1/messages')&&options.body){const body=JSON.parse(options.body);isPresentation=isPresentationBody(body);if(isPresentation){const msg=lastMessage(body);if(msg&&typeof msg.content==='string'&&!msg.content.includes('SECTION DESIGN LANGUAGE V3.2'))msg.content+=SECTION_INSTRUCTION;preparedBody=body;options={...options,body:JSON.stringify(body)}}}}catch(e){console.error('section-design-v32 request inspection error:',e.message)}
+  if(!isPresentation)return upstreamFetch(url,options);
 
-  let response=await upstreamFetch(url,options);
-  if(!isPresentation || !response.ok) return response;
-
+  const totalStarted=Date.now();const diag={version:'1.0',maxFullRetries:MAX_FULL_RETRIES,attempts:[]};
+  let response=await timedFetch('initial',url,options,diag);
+  if(!response.ok)return response;
   try{
-    let payload=await response.clone().json();
-    let ui=uiFromPayload(payload);
-    let best={response,payload,ui,score:semanticScore(ui)};
-    if(preparedBody && isThinDashboard(ui,preparedBody)){
-      for(let attempt=1;attempt<=3;attempt++){
-        const retryBody=JSON.parse(JSON.stringify(preparedBody));
-        const msg=lastMessage(retryBody);
-        if(msg&&typeof msg.content==='string'){
-          msg.content+=CORRECTION_INSTRUCTION+`\n\nCOVERAGE RETRY ${attempt}/3 — The candidate must pass all coverage checks before returning.`;
-          if(best.ui)msg.content+=`\nPrevious thin candidate had ${Array.isArray(best.ui.components)?best.ui.components.length:0} components. Expand the report rather than shortening it.`;
-        }
-        const retry=await upstreamFetch(url,{...options,body:JSON.stringify(retryBody)});
-        if(!retry.ok)continue;
-        const retryPayload=await retry.clone().json();
-        const retryUi=uiFromPayload(retryPayload);
-        const score=semanticScore(retryUi);
-        if(score>best.score)best={response:retry,payload:retryPayload,ui:retryUi,score};
-        if(retryUi && !isThinDashboard(retryUi,preparedBody)){best={response:retry,payload:retryPayload,ui:retryUi,score};break;}
+    let payload=await response.clone().json();let ui=uiFromPayload(payload);let best={response,payload,ui,score:semanticScore(ui)};diag.initialThin=isThinDashboard(ui,preparedBody);
+    if(preparedBody&&diag.initialThin){
+      for(let attempt=1;attempt<=MAX_FULL_RETRIES;attempt++){
+        const retryBody=JSON.parse(JSON.stringify(preparedBody));const msg=lastMessage(retryBody);
+        if(msg&&typeof msg.content==='string'){msg.content+=CORRECTION_INSTRUCTION+`\n\nCOVERAGE RETRY ${attempt}/${MAX_FULL_RETRIES}.`;if(best.ui)msg.content+=`\nPrevious candidate had ${Array.isArray(best.ui.components)?best.ui.components.length:0} components; expand missing analytical coverage.`}
+        const retry=await timedFetch(`coverage_retry_${attempt}`,url,{...options,body:JSON.stringify(retryBody)},diag);if(!retry.ok)continue;
+        const retryPayload=await retry.clone().json();const retryUi=uiFromPayload(retryPayload);const score=semanticScore(retryUi);if(score>best.score)best={response:retry,payload:retryPayload,ui:retryUi,score};if(retryUi&&!isThinDashboard(retryUi,preparedBody)){best={response:retry,payload:retryPayload,ui:retryUi,score};break}
       }
       response=best.response;payload=best.payload;ui=best.ui;
     }
-    addMetadataToPayload(payload);
-    return responseFromPayload(payload,response);
-  }catch(e){console.error('section-design-v32 response metadata/retry error:',e.message);return response;}
+    diag.finalThin=isThinDashboard(ui,preparedBody);diag.selectedScore=semanticScore(ui);diag.totalDurationMs=Date.now()-totalStarted;diag.totalDurationSeconds=secs(diag.totalDurationMs);diag.attemptCount=diag.attempts.length;
+    console.log(`[PERF:PRESENT] total=${diag.totalDurationSeconds}s attempts=${diag.attemptCount} initialThin=${diag.initialThin} finalThin=${diag.finalThin}`);
+    addMetadataToPayload(payload,diag);return responseFromPayload(payload,response);
+  }catch(e){console.error('section-design-v32 response metadata/retry error:',e.message);return response}
 };
