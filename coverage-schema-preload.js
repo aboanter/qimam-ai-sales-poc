@@ -1,4 +1,4 @@
-// Structured coverage guard V3.4 — compact analyst-to-art-director handoff before Anthropic.
+// Structured coverage guard V3.4.1 — final compact breadth contract at the network boundary.
 const upstreamFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
 
@@ -83,15 +83,24 @@ function compactAnalyst(a){
   };
 }
 
-const FINAL_COMPACT_V34 = `FINAL PRESENTATION CONTRACT V3.4 — HIGHEST PRIORITY:\nYou receive an authoritative Analyst summary plus a compact Odoo operation catalog. Raw Odoo rows are intentionally NOT repeated because the server still holds them and will hydrate bindings after your response.\n- You are an ART DIRECTOR, not a second analyst and not a data serializer. Do not redo analysis already supplied by Analyst.\n- COVERAGE BEFORE DECORATION. For a broad executive dashboard return 8-10 useful components in ONE response: normally 3-4 KPIs + one monthly/time trend + one customer/ranking chart + one detail table + one insight component.\n- Prefer binding for charts/tables/direct KPIs. Binding must use an exact operation name and exact resultKeys from ODOO_OPERATION_CATALOG.\n- Bound chart/table components must NOT copy categories, series, rows, or raw data. The server hydrates them locally.\n- Use compact literal data only for derived KPIs or insights already present in ANALYST_JSON and not safely bindable to one operation.\n- Treat ANALYST_JSON values/status as authoritative. Never recalculate them.\n- For insights, paraphrase only the most decision-useful Analyst facts/insights/caveats; do not invent explanations such as seasonality or causation unless Analyst explicitly supports them.\n- Use short semantic icon strings only. No verbose icon objects, watermark objects, per-component CSS, titleStyle/valueStyle, or palettes by default.\n- Use ONE compact designSystem and compact section metadata. Do not emit layoutTree when sections are sufficient.\n- If output budget becomes tight, drop decoration first, then optional extra charts. Never drop requested analytical classes.\n- Return JSON only.`;
+const SCHEMA_ADAPTER = `STRUCTURED OUTPUT SHAPE — MANDATORY:\n- Top-level object: {title:string, summary:string, components:array, designSystem?:string, layoutTree?:string}.\n- EVERY component must be exactly {type,title,data}.\n- data MUST be a JSON-encoded STRING containing that component's id, binding or literal values, compact section metadata and optional small componentLayout.\n- designSystem, when present, MUST be a JSON-encoded STRING.\n- Do not place id, binding, values, categories, series, rows, section or styles beside data; they belong INSIDE the data JSON string.\n`;
+
+const FINAL_COMPACT_V341 = `FINAL PRESENTATION CONTRACT V3.4.1 — HIGHEST PRIORITY:\nYou are the ART DIRECTOR. The Analyst already performed semantic analysis and the server retains raw Odoo rows for deterministic binding hydration.\n- COVERAGE BEFORE DECORATION. For a broad executive dashboard return 8-10 useful components in ONE response: normally 3-4 KPIs + one monthly/time trend + one customer/ranking chart + one detail table + one insight component.\n- NEVER collapse a broad dashboard into one KPI. Build the complete component manifest first.\n- Prefer binding for charts, tables and direct KPIs. Use exact operation names and exact result keys from ODOO_OPERATION_CATALOG when available.\n- Bound chart/table components must NOT copy categories, series, rows or raw Odoo data. The server hydrates them locally after your response.\n- Use compact literal values only for derived KPIs or insights already supported by ANALYST_JSON and not safely bindable to one operation.\n- Treat ANALYST_JSON values/status as authoritative. Do not recalculate them.\n- For insights, paraphrase only decision-useful Analyst facts/insights/caveats. Never invent causation, seasonality or explanations not supported by Analyst.\n- Use short semantic icon strings only: revenue, receipt, users, chart, profit, invoice, warning, wallet, trend.\n- NO verbose icon objects, watermark objects, per-component CSS, gradients, titleStyle/valueStyle, palettes, shadows or decorative specifications by default.\n- Use ONE compact top-level designSystem and compact section metadata. Do not emit layoutTree when sections are sufficient.\n- For time-grouped charts use sort:\"asc\" in the binding so the local hydrator renders chronological order.\n- If output budget becomes tight, remove decoration first and optional extra charts second. Never remove requested analytical classes.\n- Summary max 3 concise Arabic sentences; insight list normally 3-5 items. Return JSON only.`;
 
 function buildCompactMessage(body){
   const msg=body.messages?.[body.messages.length-1];if(!msg||typeof msg.content!=='string')return false;
   const text=msg.content,q=originalQuestion(body),plan=extractPlan(text),analyst=extractAnalyst(text);
-  if(!q||!plan||!analyst)return false; // Safe fallback: keep the original full grounded prompt.
+  if(!q||!plan||!analyst)return false;
   const catalog=resultCatalog(text,plan);
-  msg.content=`Original question:\n${q}\n\nANALYTICAL_INTENT:\n${JSON.stringify(plan.analyticalIntent||{})}\n\nODOO_OPERATION_CATALOG:\n${JSON.stringify(catalog)}\n\nANALYST_JSON — AUTHORITATIVE:\n${JSON.stringify(compactAnalyst(analyst))}\n\n${FINAL_COMPACT_V34}`;
+  msg.content=`Original question:\n${q}\n\nANALYTICAL_INTENT:\n${JSON.stringify(plan.analyticalIntent||{})}\n\nODOO_OPERATION_CATALOG:\n${JSON.stringify(catalog)}\n\nANALYST_JSON — AUTHORITATIVE:\n${JSON.stringify(compactAnalyst(analyst))}\n\n${SCHEMA_ADAPTER}\n${FINAL_COMPACT_V341}`;
   return true;
+}
+function stripLegacyPresentationInstructions(text){
+  let out=String(text||'');
+  const marker='\n\nIMPORTANT STRUCTURED-OUTPUT ADAPTER:';
+  const i=out.indexOf(marker);
+  if(i>=0)out=out.slice(0,i);
+  return out;
 }
 
 global.fetch = async function coverageSchemaFetch(url,options={}){
@@ -101,15 +110,21 @@ global.fetch = async function coverageSchemaFetch(url,options={}){
       if(body?.system===PRESENTATION_SYSTEM){
         const score=coverageScore(originalQuestion(body));
         const msg=body.messages?.[body.messages.length-1];
-        const isV33=typeof msg?.content==='string' && msg.content.includes('SECTION DESIGN LANGUAGE V3.3');
+        const v33=typeof msg?.content==='string' && msg.content.includes('SECTION DESIGN LANGUAGE V3.3');
         if(score>=4 && msg&&typeof msg.content==='string'){
-          const compressed=isV33&&buildCompactMessage(body);
-          if(!compressed && !msg.content.includes('STRUCTURED COVERAGE GUARD V3.4')){
-            msg.content+='\n\nSTRUCTURED COVERAGE GUARD V3.4 — This is a broad dashboard request. Preserve executive KPIs, time trend, customer/ranking analysis, detailed table, and insights. Never collapse it into one hero KPI.';
+          let compacted=false;
+          if(v33)compacted=buildCompactMessage(body);
+          if(v33 && !compacted){
+            // Fallback is still grounded in the original prompt, but removes the old verbose
+            // design examples that competed with the compact art-director contract.
+            msg.content=stripLegacyPresentationInstructions(msg.content)+`\n\n${SCHEMA_ADAPTER}\n${FINAL_COMPACT_V341}`;
           }
-          if(isV33){
-            // Compact manifest + bindings should fit in this budget; local hydration expands it later.
+          if(!v33 && !msg.content.includes('STRUCTURED COVERAGE GUARD V3.4.1')){
+            msg.content+='\n\nSTRUCTURED COVERAGE GUARD V3.4.1 — Preserve executive KPIs, time trend, customer/ranking analysis, detailed table and insights. Do not collapse a broad report into one hero KPI.';
+          }
+          if(v33){
             body.max_tokens=Math.min(Number(body.max_tokens)||3600,3600);
+            body.metadata={...(body.metadata||{}),qimam_presentation_mode:compacted?'compact_analyst_manifest':'compact_grounded_fallback'};
           }
           options={...options,body:JSON.stringify(body)};
         }
