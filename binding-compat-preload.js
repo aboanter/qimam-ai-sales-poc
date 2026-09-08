@@ -1,6 +1,6 @@
-// Presentation Binding Compatibility V1.2 — normalize compact Claude bindings at the network boundary.
-// This wrapper is intentionally loaded FIRST. Downstream presentation wrappers keep their
-// existing behavior; this only makes Claude's compact binding aliases compatible with V3.5 hydration.
+// Presentation Binding Compatibility V1.3 — normalize compact Claude bindings at the network boundary.
+// Loaded FIRST. It accepts multiple compact alias shapes and converts them to the canonical
+// V3.5 hydrator contract without changing the analytical payload.
 
 const nativeFetch = global.fetch;
 const PRESENTATION_SYSTEM = 'You output only the JSON object described in the instructions below — no other text.';
@@ -21,24 +21,39 @@ function normalizeSort(binding,type){
     else delete binding.sort;
   }
   if(!['asc','desc','none'].includes(binding.sort))delete binding.sort;
-  // Monthly/date charts must be chronological, not ordered by amount.
   const label=binding.labelField||binding.categoryField||'';
-  if(['bar_chart','line_chart','area_chart'].includes(type)&&binding.sort==='asc'&&/(date|month|period)/i.test(label)&&!binding.sortField){
+  // Date-grouped charts should be chronological. Explicitly sort on the date label field.
+  if(['bar_chart','line_chart','area_chart'].includes(type)&&binding.sort==='asc'&&/(date|month|period)/i.test(label)){
     binding.sortField=label;
   }
 }
 function normalizeBinding(data,type){
   const b=data?.binding;
   if(!b||typeof b!=='object'||!b.operation)return false;
+
   if(!b.kind){
     if(type==='kpi')b.kind='kpi';
     else if(type==='table')b.kind='table';
     else if(['bar_chart','line_chart','area_chart','pie_chart'].includes(type))b.kind='chart';
   }
+
+  if(b.kind==='kpi'){
+    // Claude has emitted both field/aggregation and valueField/aggregate forms.
+    if(!b.valueField&&typeof b.field==='string')b.valueField=b.field;
+    if(!b.field&&typeof b.valueField==='string')b.field=b.valueField;
+    if(!b.aggregate&&typeof b.aggregation==='string')b.aggregate=b.aggregation;
+    if(!b.aggregation&&typeof b.aggregate==='string')b.aggregation=b.aggregate;
+  }
+
   if(b.kind==='chart'){
+    // Canonical V3.5 contract: labelField + valueField (+ optional seriesName).
     if(!b.labelField&&typeof b.categoryField==='string')b.labelField=b.categoryField;
     if(!b.categoryField&&typeof b.labelField==='string')b.categoryField=b.labelField;
+    if(!b.valueField&&typeof b.seriesField==='string')b.valueField=b.seriesField;
+    if(!b.seriesField&&typeof b.valueField==='string')b.seriesField=b.valueField;
+    if(!data.seriesName&&typeof b.seriesLabel==='string')data.seriesName=b.seriesLabel;
   }
+
   if(b.kind==='table'&&Array.isArray(b.columns)){
     b.columns=b.columns.map(col=>{
       if(!col||typeof col!=='object')return col;
@@ -47,6 +62,7 @@ function normalizeBinding(data,type){
       return out;
     });
   }
+
   normalizeSort(b,type);
   return true;
 }
@@ -88,7 +104,7 @@ global.fetch=async function bindingCompatFetch(url,options={}){
         }catch{}
       }
     }
-    if(total)console.log(`[BINDING:COMPAT] normalized=${total}`);
+    if(total)console.log(`[BINDING:COMPAT] v1.3 normalized=${total}`);
     return responseFromPayload(payload,response);
   }catch(e){
     console.error('binding-compat non-fatal response error:',e.message);
