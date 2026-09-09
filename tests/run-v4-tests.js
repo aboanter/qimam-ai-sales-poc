@@ -5,8 +5,10 @@ const tests=[
   'presentation-v4-core.test.js',
   'presentation-v4-catalog.test.js',
   'presentation-v4-dynamic.test.js',
+  'presentation-v4-envelope.test.js',
   'presentation-v4-shadow.test.js',
-  'presentation-v4-anthropic.test.js'
+  'presentation-v4-anthropic.test.js',
+  'presentation-v4-safety.test.js'
 ];
 for(const file of tests){
   const full=path.join(__dirname,file);
