@@ -37,12 +37,16 @@ function inferType(values){
 }
 function fieldProfile(rows,key){
   const vals=rows.map(r=>field(r,key)).filter(v=>v!==undefined);
-  const unique=[];const seen=new Set();
-  for(const v of vals){const l=label(v);if(l&&!seen.has(l)){seen.add(l);unique.push(l)}if(unique.length>=8)break}
+  const type=inferType(vals),seen=new Set(),unique=[];
+  for(const v of vals){
+    const l=label(v).trim();
+    if(l&&!seen.has(l)){seen.add(l);if(unique.length<8)unique.push(l)}
+  }
   const nums=vals.map(num).filter(Number.isFinite);
   return{
     name:key,
-    type:inferType(vals),
+    type,
+    distinctCount:seen.size,
     distinctSample:unique,
     numeric:nums.length?{min:Math.min(...nums),max:Math.max(...nums),sum:nums.reduce((a,b)=>a+b,0)}:undefined
   };
@@ -66,13 +70,22 @@ function buildDatasetCatalog(plan,results,{sampleRows=2}={}){
   });
   return{datasets,catalog};
 }
+function compactField(f){
+  const out={name:f.name,type:f.type,distinctCount:Number(f.distinctCount)||0};
+  // Never echo numeric/date values into the Art Director prompt. Low-cardinality
+  // categorical labels are useful for choosing pie/bar/table without serializing rows.
+  if((f.type==='string'||f.type==='many2one')&&out.distinctCount>0&&out.distinctCount<=6){
+    out.values=(f.distinctSample||[]).slice(0,6);
+  }
+  return out;
+}
 function compactCatalog(catalog,{includeSamples=false}={}){
   return(catalog||[]).map(d=>({
     name:d.name,rowCount:d.rowCount,model:d.model,groupby:d.groupby,
-    fields:(d.fields||[]).map(f=>({name:f.name,type:f.type,distinctSample:(f.distinctSample||[]).slice(0,4)})),
+    fields:(d.fields||[]).map(compactField),
     ...(includeSamples?{sample:d.sample}: {})
   }));
 }
 function catalogText(catalog){return JSON.stringify(compactCatalog(catalog),null,0)}
 
-module.exports={buildDatasetCatalog,compactCatalog,catalogText,rowsOf,opName};
+module.exports={buildDatasetCatalog,compactCatalog,catalogText,rowsOf,opName,fieldProfile};
