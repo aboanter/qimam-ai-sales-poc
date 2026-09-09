@@ -8,6 +8,7 @@ on:
       - 'tests/presentation-v4-*.test.js'
       - 'tests/run-v4-tests.js'
       - 'package.json'
+      - 'render-v4-shadow.yaml'
       - '.github/workflows/presentation-v4-ci.yml'
   workflow_dispatch:
 
