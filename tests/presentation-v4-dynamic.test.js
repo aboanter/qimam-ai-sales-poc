@@ -1,0 +1,15 @@
+'use strict';
+const assert=require('assert');
+const {buildPresentation}=require('../presentation-v4-core');
+const {parseManifestText}=require('../presentation-v4-art-director');
+const datasets={monthly:{rows:[{month:'2025-01',sales:100},{month:'2025-02',sales:200}]},customers:{rows:[{customer:'A',sales:300},{customer:'B',sales:150}]}};
+const chartManifest={sections:[{id:'trend',layout:'wide',components:[{type:'line_chart',title:'اتجاه',dataset:'monthly',labelField:'month',valueField:'sales'}]},{id:'rank',layout:'wide',components:[{type:'bar_chart',title:'عملاء',dataset:'customers',labelField:'customer',valueField:'sales',sort:'desc',sortField:'sales'}]}]};
+const tableManifest={sections:[{id:'detail',layout:'stack',components:[{type:'table',title:'الشهور',dataset:'monthly',columns:[{field:'month',title:'الشهر'},{field:'sales',title:'المبيعات'}]},{type:'table',title:'العملاء',dataset:'customers',columns:[{field:'customer',title:'العميل'},{field:'sales',title:'المبيعات'}]}]}]};
+const a=buildPresentation(chartManifest,datasets),b=buildPresentation(tableManifest,datasets);
+assert.deepStrictEqual(a.components.map(x=>x.type),['line_chart','bar_chart']);
+assert.deepStrictEqual(b.components.map(x=>x.type),['table','table']);
+assert.deepStrictEqual(a.components[0].series[0].data,[100,200]);
+assert.deepStrictEqual(b.components[0].rows,[['2025-01',100],['2025-02',200]]);
+const parsed=parseManifestText('```json\n'+JSON.stringify(chartManifest)+'\n```');
+assert.strictEqual(parsed.sections[0].components[0].type,'line_chart');
+console.log('presentation-v4-dynamic tests: OK');
