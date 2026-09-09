@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('assert');
+const fs=require('fs');
+const path=require('path');
+const root=path.join(__dirname,'..');
+const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
+assert.strictEqual(pkg.scripts.start,'node binding-compat-preload.js','default production start must stay on proven V3 chain');
+assert.ok(pkg.scripts['start:v4-shadow'].includes('QIMAM_PRESENTATION_V4_SHADOW=1'));
+assert.ok(pkg.scripts['test:v4'].includes('run-v4-tests.js'));
+const preload=fs.readFileSync(path.join(root,'presentation-v4-shadow-preload.js'),'utf8');
+assert.ok(preload.includes("require('./binding-compat-preload.js')"),'shadow preload must delegate to proven startup chain');
+assert.ok(preload.includes('if(SHADOW_ON)'),'shadow observer must be feature-gated');
+assert.ok(preload.includes('setImmediate'),'shadow work must be non-blocking');
+assert.ok(preload.includes('return response'),'observer must preserve original response');
+assert.ok(!preload.includes('response = await runShadow'),'shadow result must never replace V3 response');
+console.log('presentation-v4-safety tests: OK');
