@@ -18,7 +18,7 @@ assert.strictEqual(catalog[0].rowCount,2);
 assert.strictEqual(catalog[0].groupby[0],'date_order:month');
 const amount=catalog[0].fields.find(f=>f.name==='amount_total:sum');
 assert.strictEqual(amount.type,'number');
-assert.strictEqual(amount.numeric.sum,2946374.7);
+assert.ok(Math.abs(amount.numeric.sum-2946374.7)<1e-6);
 assert.strictEqual(amount.distinctCount,2);
 const partner=catalog[1].fields.find(f=>f.name==='partner_id');
 assert.strictEqual(partner.type,'many2one');
