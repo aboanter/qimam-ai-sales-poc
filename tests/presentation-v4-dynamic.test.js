@@ -2,6 +2,7 @@
 const assert=require('assert');
 const {buildPresentation}=require('../presentation-v4-core');
 const {parseManifestText}=require('../presentation-v4-art-director');
+const {PRESENTATION_V4_CONTRACT}=require('../presentation-v4-contract');
 const datasets={monthly:{rows:[{month:'2025-01',sales:100},{month:'2025-02',sales:200}]},customers:{rows:[{customer:'A',sales:300},{customer:'B',sales:150}]}};
 const chartManifest={sections:[{id:'trend',layout:'wide',components:[{type:'line_chart',title:'اتجاه',dataset:'monthly',labelField:'month',valueField:'sales'}]},{id:'rank',layout:'wide',components:[{type:'bar_chart',title:'عملاء',dataset:'customers',labelField:'customer',valueField:'sales',sort:'desc',sortField:'sales'}]}]};
 const tableManifest={sections:[{id:'detail',layout:'stack',components:[{type:'table',title:'الشهور',dataset:'monthly',columns:[{field:'month',title:'الشهر'},{field:'sales',title:'المبيعات'}]},{type:'table',title:'العملاء',dataset:'customers',columns:[{field:'customer',title:'العميل'},{field:'sales',title:'المبيعات'}]}]}]};
@@ -12,4 +13,9 @@ assert.deepStrictEqual(a.components[0].series[0].data,[100,200]);
 assert.deepStrictEqual(b.components[0].rows,[['2025-01',100],['2025-02',200]]);
 const parsed=parseManifestText('```json\n'+JSON.stringify(chartManifest)+'\n```');
 assert.strictEqual(parsed.sections[0].components[0].type,'line_chart');
+assert.match(PRESENTATION_V4_CONTRACT,/under 900 tokens/i);
+assert.match(PRESENTATION_V4_CONTRACT,/at most 7 components/i);
+assert.match(PRESENTATION_V4_CONTRACT,/Never copy factual values/i);
+assert.match(PRESENTATION_V4_CONTRACT,/CSS/i);
+assert.match(PRESENTATION_V4_CONTRACT,/Output JSON only/i);
 console.log('presentation-v4-dynamic tests: OK');
