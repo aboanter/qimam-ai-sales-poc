@@ -31,5 +31,7 @@ jobs:
           node --check presentation-v4-shadow.js
           node --check presentation-v4-anthropic.js
           node --check presentation-v4-shadow-preload.js
+          node --check presentation-v4-visible-response.js
+          node --check presentation-v4-visible-preload.js
       - name: Run V4 isolated tests
         run: npm run test:v4
