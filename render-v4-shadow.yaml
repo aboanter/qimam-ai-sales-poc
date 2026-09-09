@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: qimam-ai-sales-poc-v4-shadow
+    runtime: node
+    repo: https://github.com/aboanter/qimam-ai-sales-poc
+    branch: generative-presentation-v4
+    buildCommand: npm install
+    startCommand: npm run start:v4-shadow
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: QIMAM_PRESENTATION_V4_SHADOW
+        value: "1"
+      - key: QIMAM_PRESENTATION_V4_MAX_TOKENS
+        value: "1200"
+      - key: QIMAM_PRESENTATION_V4_TIMEOUT_MS
+        value: "45000"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ODOO_MCP_URL
+        sync: false
+      - key: ODOO_MCP_KEY
+        sync: false
