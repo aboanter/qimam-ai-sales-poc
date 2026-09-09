@@ -7,6 +7,7 @@ on:
       - 'presentation-v4-*.js'
       - 'tests/presentation-v4-*.test.js'
       - 'tests/run-v4-tests.js'
+      - 'package.json'
       - '.github/workflows/presentation-v4-ci.yml'
   workflow_dispatch:
 
@@ -25,7 +26,9 @@ jobs:
           node --check presentation-v4-catalog.js
           node --check presentation-v4-contract.js
           node --check presentation-v4-art-director.js
+          node --check presentation-v4-envelope.js
           node --check presentation-v4-shadow.js
           node --check presentation-v4-anthropic.js
+          node --check presentation-v4-shadow-preload.js
       - name: Run V4 isolated tests
-        run: node tests/run-v4-tests.js
+        run: npm run test:v4
