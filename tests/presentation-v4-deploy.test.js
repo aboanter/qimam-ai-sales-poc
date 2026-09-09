@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('assert');
+const fs=require('fs');
+const path=require('path');
+const root=path.join(__dirname,'..');
+const yml=fs.readFileSync(path.join(root,'render-v4-shadow.yaml'),'utf8');
+assert.ok(yml.includes('name: qimam-ai-sales-poc-v4-shadow'));
+assert.ok(yml.includes('branch: generative-presentation-v4'));
+assert.ok(yml.includes('startCommand: npm run start:v4-shadow'));
+assert.ok(yml.includes('healthCheckPath: /healthz'));
+assert.ok(yml.includes('QIMAM_PRESENTATION_V4_SHADOW'));
+assert.ok(yml.includes('value: "1"'));
+assert.ok(yml.includes('ANTHROPIC_API_KEY\n        sync: false'));
+assert.ok(yml.includes('ODOO_MCP_URL\n        sync: false'));
+assert.ok(yml.includes('ODOO_MCP_KEY\n        sync: false'));
+assert.ok(!/sk-ant-[A-Za-z0-9_-]{10,}/.test(yml),'Anthropic secret must never be committed');
+assert.ok(!/ODOO_MCP_KEY:\s*[^\n]+/.test(yml),'Odoo MCP secret must never be committed inline');
+console.log('presentation-v4-deploy tests: OK');
