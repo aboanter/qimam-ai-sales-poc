@@ -1,0 +1,61 @@
+'use strict';
+const assert=require('assert');
+const {buildPresentation,validateManifest}=require('../presentation-v4-core');
+
+const datasets={
+  sales_summary:{rows:[{'amount_total:sum':3206106.07,'__count':229}]},
+  monthly_sales:{rows:[
+    {'date_order:month':'2025-06-01 00:00:00','amount_total:sum':2946034.3},
+    {'date_order:month':'2025-07-01 00:00:00','amount_total:sum':340.4},
+    {'date_order:month':'2025-08-01 00:00:00','amount_total:sum':26459.2}
+  ]},
+  top_customers:{rows:[
+    {partner_id:[1,'مؤسسة احمد سالم عمر'],'amount_total:sum':2905971.6,'__count':28},
+    {partner_id:[2,'خالد مبارك'],'amount_total:sum':230529.02,'__count':70}
+  ]},
+  invoice_status:{rows:[
+    {invoice_status:'to invoice','amount_total:sum':3000000},
+    {invoice_status:'to invoice','amount_total:sum':171269.77},
+    {invoice_status:'invoiced','amount_total:sum':34836.3}
+  ]}
+};
+
+const manifest={
+  title:'اختبار V4',
+  summary:'Manifest صغير؛ البيانات تُحقن محلياً.',
+  designSystem:{fontFamily:'Tajawal, sans-serif'},
+  sections:[
+    {id:'overview',layout:'grid',presentation:'hero',components:[
+      {type:'kpi',title:'إجمالي المبيعات',dataset:'sales_summary',field:'amount_total:sum',aggregate:'sum',format:'currency',currencyLabel:'ر.س'},
+      {type:'kpi',title:'عدد الطلبات',dataset:'sales_summary',field:'__count',aggregate:'sum'}
+    ]},
+    {id:'trend',layout:'wide',components:[
+      {type:'area_chart',title:'الاتجاه الشهري',dataset:'monthly_sales',labelField:'date_order:month',valueField:'amount_total:sum',sort:'asc',sortField:'date_order:month'}
+    ]},
+    {id:'customers',layout:'split',components:[
+      {type:'bar_chart',title:'أعلى العملاء',dataset:'top_customers',labelField:'partner_id',valueField:'amount_total:sum',sort:'desc',sortField:'amount_total:sum',limit:10},
+      {type:'pie_chart',title:'حالة الفوترة',dataset:'invoice_status',labelField:'invoice_status',valueField:'amount_total:sum',aggregateByLabel:true,sort:'desc'}
+    ]},
+    {id:'detail',layout:'wide',components:[
+      {type:'table',title:'تفاصيل العملاء',dataset:'top_customers',columns:[{field:'partner_id',title:'العميل'},{field:'amount_total:sum',title:'المبيعات'},{field:'__count',title:'عدد الطلبات'}],sort:'desc',sortField:'amount_total:sum'}
+    ]}
+  ]
+};
+
+const check=validateManifest(manifest,datasets);
+assert.strictEqual(check.ok,true,check.errors.join('\n'));
+const ui=buildPresentation(manifest,datasets);
+assert.strictEqual(ui.generativeUiVersion,4);
+assert.strictEqual(ui.components.length,6);
+assert.strictEqual(ui.components[0].value,3206106.07);
+assert.strictEqual(ui.components[1].value,229);
+assert.deepStrictEqual(ui.components[2].categories,['2025-06-01 00:00:00','2025-07-01 00:00:00','2025-08-01 00:00:00']);
+assert.deepStrictEqual(ui.components[3].categories,['مؤسسة احمد سالم عمر','خالد مبارك']);
+assert.deepStrictEqual(ui.components[4].categories,['to invoice','invoiced']);
+assert.deepStrictEqual(ui.components[4].series[0].data,[3171269.77,34836.3]);
+assert.deepStrictEqual(ui.components[5].rows[0],['مؤسسة احمد سالم عمر',2905971.6,28]);
+
+const bad={sections:[{components:[{type:'bar_chart',dataset:'missing',labelField:'x',valueField:'y'}]}]};
+assert.strictEqual(validateManifest(bad,datasets).ok,false);
+
+console.log('presentation-v4-core tests: OK');
