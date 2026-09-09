@@ -5,11 +5,28 @@
 // it replaces only the Anthropic presentation response. Any V4 failure falls through to
 // the original V3 Anthropic call, preserving a working result.
 
+const fs=require('fs');
+const path=require('path');
+const nativeReadFileSync=fs.readFileSync.bind(fs);
 const nativeFetch=global.fetch;
 const {parseRequestBody,isPresentationBody,extractEnvelope}=require('./presentation-v4-envelope');
 const {runShadow}=require('./presentation-v4-shadow');
 const {callAnthropicArtDirector}=require('./presentation-v4-anthropic');
 const {buildVisiblePresentation,buildAnthropicPayload,responseFromPayload,summarize}=require('./presentation-v4-visible-response');
+
+// Inject a browser-side layout adapter only on the V4 visible service. server.js and the
+// production index remain untouched. The adapter itself is additionally gated by
+// schema.presentationV4, so V3 fail-open responses keep their existing rendering path.
+fs.readFileSync=function v4VisibleReadFileSync(file,...args){
+  const value=nativeReadFileSync(file,...args);
+  try{
+    const normalized=String(file||'').replace(/\\/g,'/');
+    if(normalized.endsWith('/public/index.html')&&typeof value==='string'&&!value.includes('/presentation-v4-visible-renderer.js')){
+      return value.replace('</body>','<script src="/presentation-v4-visible-renderer.js"></script></body>');
+    }
+  }catch{}
+  return value;
+};
 
 function isAnthropic(url){return String(url||'').includes('api.anthropic.com/v1/messages')}
 
