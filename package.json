@@ -6,7 +6,9 @@
   "main": "binding-compat-preload.js",
   "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node binding-compat-preload.js"
+    "start": "node binding-compat-preload.js",
+    "start:v4-shadow": "QIMAM_PRESENTATION_V4_SHADOW=1 node presentation-v4-shadow-preload.js",
+    "test:v4": "node tests/run-v4-tests.js"
   },
   "dependencies": {
     "express": "^4.19.2"
