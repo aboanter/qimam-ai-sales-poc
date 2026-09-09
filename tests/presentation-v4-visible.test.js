@@ -13,9 +13,9 @@ const shadow={
   presentation:{
     title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.1',
     components:[
-      {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'wide'}},
-      {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}]},
-      {type:'bar_chart',title:'رسم',id:'c1',categories:['A','B'],series:[{name:'المبيعات',data:[100,50]}]}
+      {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'stack'}},
+      {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}],section:{id:'detail',layout:'stack'}},
+      {type:'bar_chart',title:'رسم',id:'c1',categories:['A','B'],series:[{name:'المبيعات',data:[100,50]}],section:{id:'visual',layout:'wide',order:2}}
     ],
     designSystem:{fontFamily:'Tajawal, Arial, sans-serif'},materialization:{components:3,failures:[]}
   }
@@ -38,8 +38,6 @@ assert.deepStrictEqual(JSON.parse(compact.components[2].data).categories,['A','B
 assert.deepStrictEqual(JSON.parse(compact.components[2].data).series[0].data,[100,50]);
 assert.strictEqual(JSON.parse(compact.designSystem).fontFamily,'Tajawal, Arial, sans-serif');
 
-// Simulate the established structured-preload inflation contract: top-level type/title
-// plus JSON-decoded data must reproduce the materialized V4 component facts.
 const roundTrip=compact.components.map((c,i)=>({type:c.type,title:c.title,...JSON.parse(c.data),_i:i}));
 assert.deepStrictEqual(roundTrip[0].columns,['العميل','المبيعات']);
 assert.deepStrictEqual(roundTrip[0].rows,[['A',100],['B',50]]);
@@ -62,5 +60,14 @@ const chainIndex=preload.indexOf("require('./binding-compat-preload.js')");
 assert.ok(installIndex>=0&&chainIndex>installIndex,'V4 interceptor must install before V3 chain so Analyst can enrich the request');
 assert.ok(preload.includes('fail-open to V3'),'visible mode must have explicit fail-open logging');
 assert.ok(preload.includes('return nativeFetch(url,options)'),'visible failures must fall through to V3 Anthropic call');
+assert.ok(preload.includes('/presentation-v4-visible-renderer.js'),'visible service must inject the V4-only browser layout adapter');
+assert.ok(preload.includes("endsWith('/public/index.html')"),'layout adapter injection must be scoped to the served index only');
 assert.ok(!preload.includes("require('./presentation-v4-shadow-preload.js')"),'visible test must not recursively start shadow mode');
+
+const renderer=fs.readFileSync(path.join(__dirname,'..','public','presentation-v4-visible-renderer.js'),'utf8');
+assert.ok(renderer.includes('if(!schema?.presentationV4)return upstreamRender(schema,host)'),'browser adapter must be a no-op for V3 schemas');
+assert.ok(renderer.includes("return{type:'stack'"),'stack section intent must render vertically even for a single section');
+assert.ok(renderer.includes('height:auto!important'),'stacked V4 items must not stretch to equal-height blank panels');
+assert.ok(renderer.includes('min-width:100%!important'),'V4 tables should use the available card width before horizontal scrolling');
+assert.ok(renderer.includes('refs.slice(2)'),'split layouts must preserve extra components rather than dropping them');
 console.log('presentation-v4-visible tests: OK');
