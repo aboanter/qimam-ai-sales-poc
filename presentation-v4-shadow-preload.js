@@ -20,7 +20,7 @@ if(SHADOW_ON){
   function isAnthropic(url){return String(url||'').includes('api.anthropic.com/v1/messages')}
   async function currentUiSummary(response){
     try{
-      const payload=await response.clone().json();
+      const payload=await response.json();
       const block=(payload?.content||[]).find(x=>x?.type==='text'&&typeof x.text==='string');
       if(!block)return null;
       const ui=parseManifestText(block.text);
@@ -35,6 +35,10 @@ if(SHADOW_ON){
     if(!presentation||!response.ok)return response;
     const envelope=extractEnvelope(body);
     if(!envelope)return response;
+    // Clone synchronously before returning. The caller may consume the original body
+    // before our asynchronous shadow work begins.
+    let responseForShadow=null;
+    try{responseForShadow=response.clone()}catch{}
     // Never block the current response; comparison is diagnostic only.
     setImmediate(async()=>{
       try{
@@ -57,7 +61,7 @@ if(SHADOW_ON){
             return out.manifest;
           }
         });
-        const current=await currentUiSummary(response);
+        const current=responseForShadow?await currentUiSummary(responseForShadow):null;
         console.log('[V4:SHADOW]',JSON.stringify({
           ok:shadow.ok,
           stage:shadow.stage||'complete',
