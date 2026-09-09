@@ -2,7 +2,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const {buildVisiblePresentation,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
+const {buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
 
 const shadow={
   ok:true,
@@ -12,22 +12,47 @@ const shadow={
   totalMs:4330,
   presentation:{
     title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.1',
-    components:[{type:'table',title:'جدول',columns:['العميل'],rows:[['A']]},{type:'insight',title:'ملاحظات',items:[{text:'ملاحظة'}]}],
-    designSystem:{},materialization:{components:2,failures:[]}
+    components:[
+      {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'wide'}},
+      {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}]},
+      {type:'bar_chart',title:'رسم',id:'c1',categories:['A','B'],series:[{name:'المبيعات',data:[100,50]}]}
+    ],
+    designSystem:{fontFamily:'Tajawal, Arial, sans-serif'},materialization:{components:3,failures:[]}
   }
 };
 const usage={input_tokens:700,output_tokens:250};
 const visible=buildVisiblePresentation(shadow,{usage,model:'claude-test'});
 assert.strictEqual(visible.presentationV4.mode,'visible_test');
+assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.2');
 assert.strictEqual(visible.presentationV4.llmMs,4321);
-assert.deepStrictEqual(visible.presentationV4.summary,{components:2,types:{table:1,insight:1}});
+assert.deepStrictEqual(visible.presentationV4.summary,{components:3,types:{table:1,insight:1,bar_chart:1}});
 assert.strictEqual(visible.components[0].rows[0][0],'A');
+
+const compact=toStructuredAdapterUi(visible);
+assert.strictEqual(compact.components.length,3);
+assert.strictEqual(typeof compact.components[0].data,'string');
+assert.deepStrictEqual(JSON.parse(compact.components[0].data).columns,['العميل','المبيعات']);
+assert.deepStrictEqual(JSON.parse(compact.components[0].data).rows,[['A',100],['B',50]]);
+assert.strictEqual(JSON.parse(compact.components[1].data).items.length,2);
+assert.deepStrictEqual(JSON.parse(compact.components[2].data).categories,['A','B']);
+assert.deepStrictEqual(JSON.parse(compact.components[2].data).series[0].data,[100,50]);
+assert.strictEqual(JSON.parse(compact.designSystem).fontFamily,'Tajawal, Arial, sans-serif');
+
+// Simulate the established structured-preload inflation contract: top-level type/title
+// plus JSON-decoded data must reproduce the materialized V4 component facts.
+const roundTrip=compact.components.map((c,i)=>({type:c.type,title:c.title,...JSON.parse(c.data),_i:i}));
+assert.deepStrictEqual(roundTrip[0].columns,['العميل','المبيعات']);
+assert.deepStrictEqual(roundTrip[0].rows,[['A',100],['B',50]]);
+assert.deepStrictEqual(roundTrip[1].items,[{text:'ملاحظة 1'},{text:'ملاحظة 2'}]);
+assert.deepStrictEqual(roundTrip[2].series,[{name:'المبيعات',data:[100,50]}]);
+
 const payload=buildAnthropicPayload(visible,{usage,model:'claude-test'});
 assert.strictEqual(payload.stop_reason,'end_turn');
 assert.strictEqual(payload.usage.output_tokens,250);
 const parsed=JSON.parse(payload.content[0].text);
 assert.strictEqual(parsed.generativeUiVersion,4);
-assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.1');
+assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.2');
+assert.ok(parsed.components.every(c=>typeof c.data==='string'));
 assert.throws(()=>buildVisiblePresentation({ok:false}),/successful materialized presentation/i);
 assert.deepStrictEqual(summarize({components:[]}),{components:0,types:{}});
 
