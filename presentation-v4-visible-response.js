@@ -34,13 +34,30 @@ function buildLayoutTree(presentation){
     return{type:'section',variant:'plain',gap:'md',children:[inner]};
   });
 }
+function collectChartHints(presentation){
+  const hints={};
+  for(const c of presentation?.components||[]){
+    if(!c?.id||!['line_chart','area_chart'].includes(c.type))continue;
+    const l=c.componentLayout||{};
+    if(!l.linearScaleNote)continue;
+    hints[String(c.id)]={
+      linearScaleNote:true,
+      highlightExtremes:!!l.highlightExtremes,
+      highIndex:Number(l.highIndex),
+      lowIndex:Number(l.lowIndex),
+      skewRatio:Number(l.skewRatio)
+    };
+  }
+  return hints;
+}
 
 function buildVisiblePresentation(shadow,{usage=null,model='claude-sonnet-4-6'}={}){
   if(!shadow?.ok||!shadow?.presentation)throw new Error('V4 visible requires a successful materialized presentation');
   const presentation=normalizeVisiblePresentation(shadow.presentation);
+  const chartHints=collectChartHints(presentation);
   presentation.layoutTree=buildLayoutTree(presentation);
   presentation.presentationV4={
-    version:'4.0-visible-alpha.4',
+    version:'4.0-visible-alpha.5',
     mode:'visible_test',
     prompt:shadow.promptSize||null,
     llmMs:shadow.llmMs??null,
@@ -50,7 +67,8 @@ function buildVisiblePresentation(shadow,{usage=null,model='claude-sonnet-4-6'}=
     summary:summarize(presentation),
     manifest:shadow.manifest||null,
     layoutSource:'server_manifest',
-    visibleNormalizerVersion:'1.0'
+    visibleNormalizerVersion:'1.1',
+    chartHints
   };
   return presentation;
 }
@@ -96,4 +114,4 @@ function responseFromPayload(payload){
   return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
 }
 
-module.exports={summarize,buildLayoutTree,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,responseFromPayload};
+module.exports={summarize,buildLayoutTree,collectChartHints,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,responseFromPayload};
