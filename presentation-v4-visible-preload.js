@@ -14,15 +14,15 @@ const {runShadow}=require('./presentation-v4-shadow');
 const {callAnthropicArtDirector}=require('./presentation-v4-anthropic');
 const {buildVisiblePresentation,buildAnthropicPayload,responseFromPayload,summarize}=require('./presentation-v4-visible-response');
 
-// Inject a browser-side layout adapter only on the V4 visible service. server.js and the
-// production index remain untouched. The adapter itself is additionally gated by
+// Inject browser-side adapters only on the V4 visible service. server.js and the
+// production index remain untouched. Both adapters are additionally gated by
 // schema.presentationV4, so V3 fail-open responses keep their existing rendering path.
 fs.readFileSync=function v4VisibleReadFileSync(file,...args){
   const value=nativeReadFileSync(file,...args);
   try{
     const normalized=String(file||'').replace(/\\/g,'/');
     if(normalized.endsWith('/public/index.html')&&typeof value==='string'&&!value.includes('/presentation-v4-visible-renderer.js')){
-      return value.replace('</body>','<script src="/presentation-v4-visible-renderer.js"></script></body>');
+      return value.replace('</body>','<script src="/presentation-v4-visible-renderer.js"></script><script src="/presentation-v4-chart-enhancer.js"></script></body>');
     }
   }catch{}
   return value;
