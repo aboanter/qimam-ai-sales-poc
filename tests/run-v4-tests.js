@@ -12,6 +12,7 @@ const tests=[
   'presentation-v4-acceptance.test.js',
   'presentation-v4-deploy.test.js',
   'presentation-v4-visible.test.js',
+  'presentation-v4-visible-normalize.test.js',
   'presentation-v4-insight-renderer.test.js'
 ];
 for(const file of tests){
