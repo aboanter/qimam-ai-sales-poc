@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const {buildPresentation,validateManifest}=require('../presentation-v4-core');
+const {buildPresentation,validateManifest,normalizeIcon,displayCategory}=require('../presentation-v4-core');
 
 const datasets={
   sales_summary:{rows:[{'amount_total:sum':3206106.07,'__count':229}]},
@@ -26,8 +26,8 @@ const manifest={
   designSystem:{fontFamily:'Tajawal, sans-serif'},
   sections:[
     {id:'overview',layout:'grid',presentation:'hero',components:[
-      {type:'kpi',title:'إجمالي المبيعات',dataset:'sales_summary',field:'amount_total:sum',aggregate:'sum',format:'currency',currencyLabel:'ر.س'},
-      {type:'kpi',title:'عدد الطلبات',dataset:'sales_summary',field:'__count',aggregate:'sum'}
+      {type:'kpi',title:'إجمالي المبيعات',dataset:'sales_summary',field:'amount_total:sum',aggregate:'sum',format:'currency',currencyLabel:'ر.س',icon:'trending-up'},
+      {type:'kpi',title:'عدد الطلبات',dataset:'sales_summary',field:'__count',aggregate:'sum',icon:'shopping-cart'}
     ]},
     {id:'trend',layout:'wide',components:[
       {type:'area_chart',title:'الاتجاه الشهري',dataset:'monthly_sales',labelField:'date_order:month',valueField:'amount_total:sum',sort:'asc',sortField:'date_order:month'}
@@ -46,14 +46,21 @@ const check=validateManifest(manifest,datasets);
 assert.strictEqual(check.ok,true,check.errors.join('\n'));
 const ui=buildPresentation(manifest,datasets);
 assert.strictEqual(ui.generativeUiVersion,4);
+assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.2');
 assert.strictEqual(ui.components.length,6);
 assert.strictEqual(ui.components[0].value,3206106.07);
 assert.strictEqual(ui.components[1].value,229);
-assert.deepStrictEqual(ui.components[2].categories,['2025-06-01 00:00:00','2025-07-01 00:00:00','2025-08-01 00:00:00']);
+assert.deepStrictEqual(ui.components[0].icon,{name:'trend'});
+assert.deepStrictEqual(ui.components[1].icon,{name:'cart'});
+assert.deepStrictEqual(ui.components[2].categories,['يونيو 2025','يوليو 2025','أغسطس 2025']);
 assert.deepStrictEqual(ui.components[3].categories,['مؤسسة احمد سالم عمر','خالد مبارك']);
 assert.deepStrictEqual(ui.components[4].categories,['to invoice','invoiced']);
 assert.deepStrictEqual(ui.components[4].series[0].data,[3171269.77,34836.3]);
 assert.deepStrictEqual(ui.components[5].rows[0],['مؤسسة احمد سالم عمر',2905971.6,28]);
+assert.deepStrictEqual(normalizeIcon('dollar-sign'),{name:'revenue'});
+assert.deepStrictEqual(normalizeIcon({name:'bar-chart',size:30}),{name:'chart',size:30});
+assert.strictEqual(displayCategory('2025-12-01 00:00:00','date_order:month'),'ديسمبر 2025');
+assert.strictEqual(displayCategory('مؤسسة س','partner_id'),'مؤسسة س');
 
 const bad={sections:[{components:[{type:'bar_chart',dataset:'missing',labelField:'x',valueField:'y'}]}]};
 assert.strictEqual(validateManifest(bad,datasets).ok,false);
