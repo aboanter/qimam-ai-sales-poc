@@ -73,6 +73,7 @@ assert.ok(installIndex>=0&&chainIndex>installIndex,'V4 interceptor must install 
 assert.ok(preload.includes('fail-open to V3'),'visible mode must have explicit fail-open logging');
 assert.ok(preload.includes('return nativeFetch(url,options)'),'visible failures must fall through to V3 Anthropic call');
 assert.ok(preload.includes('/presentation-v4-visible-renderer.js'),'visible service must inject the V4-only browser layout adapter');
+assert.ok(preload.includes('/presentation-v4-chart-enhancer.js'),'visible service must inject the V4-only chart enhancer');
 assert.ok(preload.includes("endsWith('/public/index.html')"),'layout adapter injection must be scoped to the served index only');
 assert.ok(!preload.includes("require('./presentation-v4-shadow-preload.js')"),'visible test must not recursively start shadow mode');
 
@@ -81,4 +82,10 @@ assert.ok(renderer.includes('if(!schema?.presentationV4)return upstreamRender(sc
 assert.ok(renderer.includes('height:auto!important'),'stacked V4 items must not stretch to equal-height blank panels');
 assert.ok(renderer.includes('min-width:100%!important'),'V4 tables should use the available card width before horizontal scrolling');
 assert.ok(renderer.includes('refs.slice(2)'),'split layouts must preserve extra components rather than dropping them');
+
+const chartEnhancer=fs.readFileSync(path.join(__dirname,'..','public','presentation-v4-chart-enhancer.js'),'utf8');
+assert.ok(chartEnhancer.includes('if(!schema?.presentationV4||!host)return'),'chart enhancer must be V4-only');
+assert.ok(chartEnhancer.includes('linearScaleNote'),'chart enhancer must honor deterministic skew metadata');
+assert.ok(chartEnhancer.includes('المقياس خطي'),'Arabic scale note must disclose that the axis remains linear');
+assert.ok(!chartEnhancer.includes('logarithmic'),'chart enhancer must not silently change scale semantics');
 console.log('presentation-v4-visible tests: OK');
