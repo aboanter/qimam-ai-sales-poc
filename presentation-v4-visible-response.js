@@ -1,4 +1,5 @@
 'use strict';
+const {normalizeVisiblePresentation}=require('./presentation-v4-visible-normalize');
 
 function summarize(ui){
   const types={};
@@ -36,26 +37,24 @@ function buildLayoutTree(presentation){
 
 function buildVisiblePresentation(shadow,{usage=null,model='claude-sonnet-4-6'}={}){
   if(!shadow?.ok||!shadow?.presentation)throw new Error('V4 visible requires a successful materialized presentation');
-  const presentation={...shadow.presentation};
+  const presentation=normalizeVisiblePresentation(shadow.presentation);
   presentation.layoutTree=buildLayoutTree(presentation);
   presentation.presentationV4={
-    version:'4.0-visible-alpha.3',
+    version:'4.0-visible-alpha.4',
     mode:'visible_test',
     prompt:shadow.promptSize||null,
     llmMs:shadow.llmMs??null,
     totalMs:shadow.totalMs??null,
     usage,
     model,
-    summary:summarize(shadow.presentation),
+    summary:summarize(presentation),
     manifest:shadow.manifest||null,
-    layoutSource:'server_manifest'
+    layoutSource:'server_manifest',
+    visibleNormalizerVersion:'1.0'
   };
   return presentation;
 }
 
-// The established structured-preload layer expects every component in the compact
-// {type,title,data:<JSON string>} dialect. V4 materializes components before that layer,
-// so adapt only at this boundary; structured-preload will inflate them back losslessly.
 function toStructuredAdapterUi(presentation){
   const compact={
     title:String(presentation?.title||''),
