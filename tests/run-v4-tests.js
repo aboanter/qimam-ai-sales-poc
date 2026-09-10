@@ -11,7 +11,8 @@ const tests=[
   'presentation-v4-safety.test.js',
   'presentation-v4-acceptance.test.js',
   'presentation-v4-deploy.test.js',
-  'presentation-v4-visible.test.js'
+  'presentation-v4-visible.test.js',
+  'presentation-v4-insight-renderer.test.js'
 ];
 for(const file of tests){
   const full=path.join(__dirname,file);
