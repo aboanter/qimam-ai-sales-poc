@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const {buildPresentation,validateManifest,normalizeIcon,displayCategory}=require('../presentation-v4-core');
+const {buildPresentation,validateManifest,normalizeIcon,displayCategory,skewHint}=require('../presentation-v4-core');
 
 const datasets={
   sales_summary:{rows:[{'amount_total:sum':3206106.07,'__count':229}]},
@@ -46,14 +46,20 @@ const check=validateManifest(manifest,datasets);
 assert.strictEqual(check.ok,true,check.errors.join('\n'));
 const ui=buildPresentation(manifest,datasets);
 assert.strictEqual(ui.generativeUiVersion,4);
-assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.2');
+assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.3');
 assert.strictEqual(ui.components.length,6);
 assert.strictEqual(ui.components[0].value,3206106.07);
 assert.strictEqual(ui.components[1].value,229);
 assert.deepStrictEqual(ui.components[0].icon,{name:'trend'});
 assert.deepStrictEqual(ui.components[1].icon,{name:'cart'});
 assert.deepStrictEqual(ui.components[2].categories,['يونيو 2025','يوليو 2025','أغسطس 2025']);
+assert.strictEqual(ui.components[2].componentLayout.linearScaleNote,true);
+assert.strictEqual(ui.components[2].componentLayout.highlightExtremes,true);
+assert.strictEqual(ui.components[2].componentLayout.highIndex,0);
+assert.strictEqual(ui.components[2].componentLayout.lowIndex,1);
+assert.ok(ui.components[2].componentLayout.skewRatio>100);
 assert.deepStrictEqual(ui.components[3].categories,['مؤسسة احمد سالم عمر','خالد مبارك']);
+assert.strictEqual(ui.components[3].componentLayout,undefined,'ranking bar should not get trend-only skew hint');
 assert.deepStrictEqual(ui.components[4].categories,['to invoice','invoiced']);
 assert.deepStrictEqual(ui.components[4].series[0].data,[3171269.77,34836.3]);
 assert.deepStrictEqual(ui.components[5].rows[0],['مؤسسة احمد سالم عمر',2905971.6,28]);
@@ -61,6 +67,7 @@ assert.deepStrictEqual(normalizeIcon('dollar-sign'),{name:'revenue'});
 assert.deepStrictEqual(normalizeIcon({name:'bar-chart',size:30}),{name:'chart',size:30});
 assert.strictEqual(displayCategory('2025-12-01 00:00:00','date_order:month'),'ديسمبر 2025');
 assert.strictEqual(displayCategory('مؤسسة س','partner_id'),'مؤسسة س');
+assert.strictEqual(skewHint('bar_chart',[{label:'A',value:100},{label:'B',value:1},{label:'C',value:.5}]),null);
 
 const bad={sections:[{components:[{type:'bar_chart',dataset:'missing',labelField:'x',valueField:'y'}]}]};
 assert.strictEqual(validateManifest(bad,datasets).ok,false);
