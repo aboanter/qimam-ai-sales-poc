@@ -131,6 +131,16 @@ function groupPairs(rows,labelField,valueField,aggregateMode='sum'){
   }
   return [...grouped.entries()].map(([label,value])=>({label,value}));
 }
+function skewHint(type,pairs){
+  if(!['line_chart','area_chart'].includes(type) || pairs.length<3) return null;
+  const positives=pairs.map((p,i)=>({i,label:p.label,value:p.value})).filter(x=>Number.isFinite(x.value)&&x.value>0);
+  if(positives.length<3)return null;
+  const ranked=positives.slice().sort((a,b)=>b.value-a.value);
+  const ratio=ranked[1].value>0?ranked[0].value/ranked[1].value:Infinity;
+  if(ratio<8)return null;
+  const low=positives.slice().sort((a,b)=>a.value-b.value)[0];
+  return {linearScaleNote:true,highlightExtremes:true,highIndex:ranked[0].i,lowIndex:low.i,skewRatio:Math.round(ratio*10)/10};
+}
 function resolveSection(component,sectionIndex){
   const s = component.section || {};
   const layout = LAYOUTS.has(s.layout) ? s.layout : 'wide';
@@ -182,6 +192,8 @@ function buildChart(spec,rows,index){
   if(!pairs.length) throw new Error(`Chart ${out.id} produced no plottable data`);
   out.categories=pairs.map(p=>p.label);
   out.series=[{name:String(spec.seriesLabel || spec.seriesName || out.title || 'القيمة'),data:pairs.map(p=>p.value)}];
+  const hint=skewHint(out.type,pairs);
+  if(hint)out.componentLayout={...(out.componentLayout||{}),...hint};
   return out;
 }
 function buildTable(spec,rows,index){
@@ -264,7 +276,7 @@ function buildPresentation(manifest,datasets,{strict=true}={}){
     components,
     designSystem:isObj(manifest.designSystem) ? clone(manifest.designSystem) : {},
     generativeUiVersion:4,
-    presentationBuilderVersion:'4.0.0-alpha.2',
+    presentationBuilderVersion:'4.0.0-alpha.3',
     presentationManifestVersion:'1.0',
     materialization:{components:components.length,failures}
   };
@@ -280,5 +292,6 @@ module.exports={
   label,
   num,
   normalizeIcon,
-  displayCategory
+  displayCategory,
+  skewHint
 };
