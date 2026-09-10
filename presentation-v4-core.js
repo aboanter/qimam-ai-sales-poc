@@ -9,6 +9,20 @@
 const CHART_TYPES = new Set(['bar_chart','line_chart','area_chart','pie_chart','donut_chart']);
 const COMPONENT_TYPES = new Set(['kpi','table','bar_chart','line_chart','area_chart','pie_chart','donut_chart','insight']);
 const LAYOUTS = new Set(['wide','grid','split','stack','strip']);
+const SUPPORTED_ICONS = new Set(['trend','revenue','receipt','return','profit','warning','users','cart','invoice','chart','wallet','check','clock','spark']);
+const ICON_ALIASES = {
+  'trending-up':'trend','trending_up':'trend','arrow-up-right':'trend','growth':'trend',
+  'shopping-cart':'cart','shopping_cart':'cart','basket':'cart',
+  'dollar-sign':'revenue','dollar':'revenue','money':'revenue','sales':'revenue',
+  'file-text':'invoice','file_invoice':'invoice','document':'invoice',
+  'bar-chart':'chart','bar_chart':'chart','analytics':'chart',
+  'credit-card':'wallet','credit_card':'wallet',
+  'user':'users','customers':'users',
+  'alert-triangle':'warning','alert':'warning',
+  'check-circle':'check','check_circle':'check',
+  'time':'clock'
+};
+const AR_MONTHS=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
 function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
 function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -25,6 +39,33 @@ function label(v){
   if(Array.isArray(v)) return String(v[1] ?? v[0] ?? '');
   if(isObj(v)) return String(v.display_name ?? v.name ?? v.label ?? v.value ?? '');
   return String(v);
+}
+function normalizeIcon(icon){
+  if(!icon) return null;
+  if(isObj(icon)){
+    const out=clone(icon);
+    if(out.name){
+      const raw=String(out.name).toLowerCase();
+      out.name=SUPPORTED_ICONS.has(raw)?raw:(ICON_ALIASES[raw]||'spark');
+    }
+    return out;
+  }
+  const raw=String(icon).trim().toLowerCase();
+  const name=SUPPORTED_ICONS.has(raw)?raw:(ICON_ALIASES[raw]||'spark');
+  return {name};
+}
+function displayCategory(v,labelField){
+  const raw=label(v).trim();
+  if(!raw) return '';
+  const fieldName=String(labelField||'').toLowerCase();
+  if(fieldName.includes(':month') || fieldName.endsWith('_month') || /^\d{4}-\d{2}-01(?:[ t].*)?$/.test(raw)){
+    const m=raw.match(/^(\d{4})-(\d{2})-/);
+    if(m){
+      const month=Number(m[2]);
+      if(month>=1&&month<=12)return `${AR_MONTHS[month-1]} ${m[1]}`;
+    }
+  }
+  return raw;
 }
 function field(row,key){
   if(!isObj(row) || !key) return undefined;
@@ -121,7 +162,7 @@ function buildKpi(spec,rows,index){
   out.format=spec.format || 'number';
   if(spec.currencyLabel) out.currencyLabel=String(spec.currencyLabel);
   if(spec.numberLocale) out.numberLocale=String(spec.numberLocale);
-  if(spec.icon) out.icon=clone(spec.icon);
+  if(spec.icon) out.icon=normalizeIcon(spec.icon);
   return out;
 }
 function buildChart(spec,rows,index){
@@ -136,7 +177,7 @@ function buildChart(spec,rows,index){
     if(spec.sort === 'desc') pairs.sort((a,b)=>b.value-a.value);
     pairs = pairs.slice(0,Math.max(1,Math.min(Number(spec.limit)||100,500)));
   }else{
-    pairs = sortRows(rows,{...spec,sortField:spec.sortField || (spec.sortBy === 'label' ? labelField : spec.sortField)}).map(r=>({label:label(field(r,labelField)),value:num(field(r,valueField))})).filter(p=>p.label && Number.isFinite(p.value));
+    pairs = sortRows(rows,{...spec,sortField:spec.sortField || (spec.sortBy === 'label' ? labelField : spec.sortField)}).map(r=>({label:displayCategory(field(r,labelField),labelField),value:num(field(r,valueField))})).filter(p=>p.label && Number.isFinite(p.value));
   }
   if(!pairs.length) throw new Error(`Chart ${out.id} produced no plottable data`);
   out.categories=pairs.map(p=>p.label);
@@ -223,7 +264,7 @@ function buildPresentation(manifest,datasets,{strict=true}={}){
     components,
     designSystem:isObj(manifest.designSystem) ? clone(manifest.designSystem) : {},
     generativeUiVersion:4,
-    presentationBuilderVersion:'4.0.0-alpha.1',
+    presentationBuilderVersion:'4.0.0-alpha.2',
     presentationManifestVersion:'1.0',
     materialization:{components:components.length,failures}
   };
@@ -237,5 +278,7 @@ module.exports={
   datasetRows,
   field,
   label,
-  num
+  num,
+  normalizeIcon,
+  displayCategory
 };
