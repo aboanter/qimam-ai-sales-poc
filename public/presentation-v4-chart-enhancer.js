@@ -17,9 +17,15 @@
   function chartComponents(schema){
     return (schema?.components||[]).filter(c=>['bar_chart','line_chart','area_chart','pie_chart'].includes(c?.type));
   }
-  function enhanceOne(c,block,isArabic){
-    const cfg=c?.componentLayout||{};
-    if(!cfg.linearScaleNote||!Array.isArray(c.categories)||!Array.isArray(c.series?.[0]?.data))return;
+  function hintFor(schema,c){
+    const isolated=schema?.presentationV4?.chartHints?.[String(c?.id||'')];
+    if(isolated&&isolated.linearScaleNote)return isolated;
+    const legacy=c?.componentLayout||{};
+    return legacy.linearScaleNote?legacy:null;
+  }
+  function enhanceOne(schema,c,block,isArabic){
+    const cfg=hintFor(schema,c);
+    if(!cfg||!Array.isArray(c.categories)||!Array.isArray(c.series?.[0]?.data))return;
     if(block.querySelector('.qv4-scale-note'))return;
     const values=c.series[0].data.map(Number);
     const hi=Number(cfg.highIndex),lo=Number(cfg.lowIndex);
@@ -39,8 +45,8 @@
     const comps=chartComponents(schema);
     const blocks=[...host.querySelectorAll('.block')].filter(b=>b.querySelector('.chart'));
     const isArabic=arabicUi(schema);
-    comps.forEach((c,i)=>{if(blocks[i])enhanceOne(c,blocks[i],isArabic)});
-    schema.presentationV4.chartEnhancerVersion='1.0';
+    comps.forEach((c,i)=>{if(blocks[i])enhanceOne(schema,c,blocks[i],isArabic)});
+    schema.presentationV4.chartEnhancerVersion='1.1';
   }
 
   window.render=function presentationV4ChartEnhancer(schema,host){
