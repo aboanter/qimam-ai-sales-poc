@@ -11,7 +11,7 @@ const shadow={
   llmMs:4321,
   totalMs:4330,
   presentation:{
-    title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.1',
+    title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.3',
     components:[
       {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'stack',order:1}},
       {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}],section:{id:'detail',layout:'stack',order:1}},
@@ -23,13 +23,14 @@ const shadow={
 const usage={input_tokens:700,output_tokens:250};
 const visible=buildVisiblePresentation(shadow,{usage,model:'claude-test'});
 assert.strictEqual(visible.presentationV4.mode,'visible_test');
-assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.3');
+assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.4');
+assert.strictEqual(visible.presentationV4.visibleNormalizerVersion,'1.0');
 assert.strictEqual(visible.presentationV4.layoutSource,'server_manifest');
 assert.strictEqual(visible.presentationV4.llmMs,4321);
 assert.deepStrictEqual(visible.presentationV4.summary,{components:3,types:{table:1,insight:1,bar_chart:1}});
 assert.strictEqual(visible.components[0].rows[0][0],'A');
 
-const tree=buildLayoutTree(shadow.presentation);
+const tree=buildLayoutTree(visible);
 assert.strictEqual(tree.length,2);
 assert.strictEqual(tree[0].children[0].type,'stack');
 assert.deepStrictEqual(tree[0].children[0].children.map(x=>x.id),['t1','i1']);
@@ -60,7 +61,8 @@ assert.strictEqual(payload.stop_reason,'end_turn');
 assert.strictEqual(payload.usage.output_tokens,250);
 const parsed=JSON.parse(payload.content[0].text);
 assert.strictEqual(parsed.generativeUiVersion,4);
-assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.3');
+assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.4');
+assert.strictEqual(parsed.presentationV4.visibleNormalizerVersion,'1.0');
 assert.ok(parsed.components.every(c=>typeof c.data==='string'));
 assert.strictEqual(JSON.parse(parsed.layoutTree)[0].children[0].type,'stack');
 assert.throws(()=>buildVisiblePresentation({ok:false}),/successful materialized presentation/i);
