@@ -2,7 +2,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const {buildLayoutTree,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
+const {buildLayoutTree,collectChartHints,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
 
 const shadow={
   ok:true,
@@ -15,7 +15,7 @@ const shadow={
     components:[
       {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'stack',order:1}},
       {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}],section:{id:'detail',layout:'stack',order:1}},
-      {type:'bar_chart',title:'رسم',id:'c1',categories:['A','B'],series:[{name:'المبيعات',data:[100,50]}],section:{id:'visual',layout:'wide',order:2}}
+      {type:'area_chart',title:'اتجاه',id:'c1',categories:['يونيو 2025','يوليو 2025','أغسطس 2025'],series:[{name:'المبيعات',data:[1000,1,10]}],componentLayout:{linearScaleNote:true,highlightExtremes:true,highIndex:0,lowIndex:1,skewRatio:100},section:{id:'visual',layout:'wide',order:2}}
     ],
     designSystem:{fontFamily:'Tajawal, Arial, sans-serif'},materialization:{components:3,failures:[]}
   }
@@ -23,12 +23,14 @@ const shadow={
 const usage={input_tokens:700,output_tokens:250};
 const visible=buildVisiblePresentation(shadow,{usage,model:'claude-test'});
 assert.strictEqual(visible.presentationV4.mode,'visible_test');
-assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.4');
-assert.strictEqual(visible.presentationV4.visibleNormalizerVersion,'1.0');
+assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.5');
+assert.strictEqual(visible.presentationV4.visibleNormalizerVersion,'1.1');
 assert.strictEqual(visible.presentationV4.layoutSource,'server_manifest');
 assert.strictEqual(visible.presentationV4.llmMs,4321);
-assert.deepStrictEqual(visible.presentationV4.summary,{components:3,types:{table:1,insight:1,bar_chart:1}});
+assert.deepStrictEqual(visible.presentationV4.summary,{components:3,types:{table:1,insight:1,area_chart:1}});
 assert.strictEqual(visible.components[0].rows[0][0],'A');
+assert.deepStrictEqual(visible.presentationV4.chartHints.c1,{linearScaleNote:true,highlightExtremes:true,highIndex:0,lowIndex:1,skewRatio:100});
+assert.deepStrictEqual(collectChartHints(visible).c1,{linearScaleNote:true,highlightExtremes:true,highIndex:0,lowIndex:1,skewRatio:100});
 
 const tree=buildLayoutTree(visible);
 assert.strictEqual(tree.length,2);
@@ -42,8 +44,10 @@ assert.strictEqual(typeof compact.components[0].data,'string');
 assert.deepStrictEqual(JSON.parse(compact.components[0].data).columns,['العميل','المبيعات']);
 assert.deepStrictEqual(JSON.parse(compact.components[0].data).rows,[['A',100],['B',50]]);
 assert.strictEqual(JSON.parse(compact.components[1].data).items.length,2);
-assert.deepStrictEqual(JSON.parse(compact.components[2].data).categories,['A','B']);
-assert.deepStrictEqual(JSON.parse(compact.components[2].data).series[0].data,[100,50]);
+assert.deepStrictEqual(JSON.parse(compact.components[2].data).categories,['يونيو 2025','يوليو 2025','أغسطس 2025']);
+assert.deepStrictEqual(JSON.parse(compact.components[2].data).series[0].data,[1000,1,10]);
+assert.strictEqual(compact.presentationV4.chartHints.c1.highIndex,0);
+assert.strictEqual(compact.presentationV4.chartHints.c1.lowIndex,1);
 assert.strictEqual(JSON.parse(compact.designSystem).fontFamily,'Tajawal, Arial, sans-serif');
 assert.strictEqual(typeof compact.layoutTree,'string');
 const compactTree=JSON.parse(compact.layoutTree);
@@ -54,15 +58,16 @@ const roundTrip=compact.components.map((c,i)=>({type:c.type,title:c.title,...JSO
 assert.deepStrictEqual(roundTrip[0].columns,['العميل','المبيعات']);
 assert.deepStrictEqual(roundTrip[0].rows,[['A',100],['B',50]]);
 assert.deepStrictEqual(roundTrip[1].items,[{text:'ملاحظة 1'},{text:'ملاحظة 2'}]);
-assert.deepStrictEqual(roundTrip[2].series,[{name:'المبيعات',data:[100,50]}]);
+assert.deepStrictEqual(roundTrip[2].series,[{name:'المبيعات',data:[1000,1,10]}]);
 
 const payload=buildAnthropicPayload(visible,{usage,model:'claude-test'});
 assert.strictEqual(payload.stop_reason,'end_turn');
 assert.strictEqual(payload.usage.output_tokens,250);
 const parsed=JSON.parse(payload.content[0].text);
 assert.strictEqual(parsed.generativeUiVersion,4);
-assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.4');
-assert.strictEqual(parsed.presentationV4.visibleNormalizerVersion,'1.0');
+assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.5');
+assert.strictEqual(parsed.presentationV4.visibleNormalizerVersion,'1.1');
+assert.strictEqual(parsed.presentationV4.chartHints.c1.skewRatio,100);
 assert.ok(parsed.components.every(c=>typeof c.data==='string'));
 assert.strictEqual(JSON.parse(parsed.layoutTree)[0].children[0].type,'stack');
 assert.throws(()=>buildVisiblePresentation({ok:false}),/successful materialized presentation/i);
@@ -87,6 +92,7 @@ assert.ok(renderer.includes('refs.slice(2)'),'split layouts must preserve extra 
 
 const chartEnhancer=fs.readFileSync(path.join(__dirname,'..','public','presentation-v4-chart-enhancer.js'),'utf8');
 assert.ok(chartEnhancer.includes('if(!schema?.presentationV4||!host)return'),'chart enhancer must be V4-only');
+assert.ok(chartEnhancer.includes('presentationV4?.chartHints'),'chart enhancer must read isolated V4 chart hints');
 assert.ok(chartEnhancer.includes('linearScaleNote'),'chart enhancer must honor deterministic skew metadata');
 assert.ok(chartEnhancer.includes('المقياس خطي'),'Arabic scale note must disclose that the axis remains linear');
 assert.ok(!chartEnhancer.includes('logarithmic'),'chart enhancer must not silently change scale semantics');
