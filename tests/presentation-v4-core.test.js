@@ -46,7 +46,7 @@ const check=validateManifest(manifest,datasets);
 assert.strictEqual(check.ok,true,check.errors.join('\n'));
 const ui=buildPresentation(manifest,datasets);
 assert.strictEqual(ui.generativeUiVersion,4);
-assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.3');
+assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.4');
 assert.strictEqual(ui.components.length,6);
 assert.strictEqual(ui.components[0].value,3206106.07);
 assert.strictEqual(ui.components[1].value,229);
