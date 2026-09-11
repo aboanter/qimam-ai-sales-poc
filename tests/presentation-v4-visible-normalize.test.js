@@ -7,7 +7,8 @@ const input={
   components:[
     {type:'kpi',title:'إجمالي المبيعات',format:'currency',currencyLabel:'SAR',icon:'trending-up',value:100},
     {type:'kpi',title:'إجمالي الطلبات',icon:'shopping-cart',value:10},
-    {type:'area_chart',title:'الاتجاه الشهري',categories:['2025-12-01 00:00:00','2025-06-01 00:00:00','2025-10-01 00:00:00'],series:[{name:'المبيعات',data:[44.85,2946034.3,225316.05]}]}
+    {type:'area_chart',title:'الاتجاه الشهري',categories:['2025-12-01 00:00:00','2025-06-01 00:00:00','2025-10-01 00:00:00'],series:[{name:'المبيعات',data:[44.85,2946034.3,225316.05]}]},
+    {type:'bar_chart',title:'المقارنة الشهرية',categories:['2025-12-01 00:00:00','2025-07-01 00:00:00','2025-11-01 00:00:00','2025-09-01 00:00:00','2025-08-01 00:00:00','2025-10-01 00:00:00'],series:[{name:'المبيعات',data:[44.85,340.4,2562.2,5349.07,26459.2,225316.05]}]}
   ]
 };
 const out=normalizeVisiblePresentation(input);
@@ -19,6 +20,9 @@ assert.deepStrictEqual(out.components[2].series[0].data,[2946034.3,225316.05,44.
 assert.strictEqual(out.components[2].componentLayout.linearScaleNote,true);
 assert.strictEqual(out.components[2].componentLayout.highIndex,0);
 assert.strictEqual(out.components[2].componentLayout.lowIndex,2);
+assert.deepStrictEqual(out.components[3].categories,['يوليو 2025','أغسطس 2025','سبتمبر 2025','أكتوبر 2025','نوفمبر 2025','ديسمبر 2025']);
+assert.deepStrictEqual(out.components[3].series[0].data,[340.4,26459.2,5349.07,225316.05,2562.2,44.85]);
+assert.strictEqual(out.components[3].componentLayout,undefined,'temporal bar sorting must not add trend skew metadata');
 assert.strictEqual(temporalKey('2025-06-01 00:00:00'),20250601);
 assert.strictEqual(temporalKey('يونيو 2025'),20250601);
 assert.strictEqual(formatTemporal('2025-12-01 00:00:00',true),'ديسمبر 2025');
