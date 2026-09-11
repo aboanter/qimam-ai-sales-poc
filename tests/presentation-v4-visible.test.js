@@ -2,16 +2,17 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const {buildLayoutTree,collectChartHints,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
+const {buildLayoutTree,collectChartHints,buildVisiblePresentation,buildDecisionPresentation,toStructuredAdapterUi,buildAnthropicPayload,summarize}=require('../presentation-v4-visible-response');
 
 const shadow={
   ok:true,
+  decision:{decision:'render'},
   manifest:{title:'اختبار',components:[{type:'table'}]},
   promptSize:{chars:1000,estimatedTokens:250},
   llmMs:4321,
   totalMs:4330,
   presentation:{
-    title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.3',
+    title:'اختبار',summary:'',generativeUiVersion:4,presentationBuilderVersion:'4.0.0-alpha.5',
     components:[
       {type:'table',title:'جدول',id:'t1',columns:['العميل','المبيعات'],rows:[['A',100],['B',50]],section:{id:'detail',layout:'stack',order:1}},
       {type:'insight',title:'ملاحظات',id:'i1',items:[{text:'ملاحظة 1'},{text:'ملاحظة 2'}],section:{id:'detail',layout:'stack',order:1}},
@@ -23,7 +24,8 @@ const shadow={
 const usage={input_tokens:700,output_tokens:250};
 const visible=buildVisiblePresentation(shadow,{usage,model:'claude-test'});
 assert.strictEqual(visible.presentationV4.mode,'visible_test');
-assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.5');
+assert.strictEqual(visible.presentationV4.version,'4.0-visible-alpha.6');
+assert.strictEqual(visible.presentationV4.decision,'render');
 assert.strictEqual(visible.presentationV4.visibleNormalizerVersion,'1.1');
 assert.strictEqual(visible.presentationV4.layoutSource,'server_manifest');
 assert.strictEqual(visible.presentationV4.llmMs,4321);
@@ -31,6 +33,20 @@ assert.deepStrictEqual(visible.presentationV4.summary,{components:3,types:{table
 assert.strictEqual(visible.components[0].rows[0][0],'A');
 assert.deepStrictEqual(visible.presentationV4.chartHints.c1,{linearScaleNote:true,highlightExtremes:true,highIndex:0,lowIndex:1,skewRatio:100});
 assert.deepStrictEqual(collectChartHints(visible).c1,{linearScaleNote:true,highlightExtremes:true,highIndex:0,lowIndex:1,skewRatio:100});
+
+const clarifyShadow={ok:true,decision:{decision:'clarify',question:'هل تقصد الحصة من الإجمالي أم مقارنة القيمة؟',options:['الحصة من الإجمالي','مقارنة القيمة']},promptSize:{chars:500,estimatedTokens:125},llmMs:100,totalMs:110};
+const clarifyUi=buildDecisionPresentation(clarifyShadow,{usage,model:'claude-test'});
+assert.strictEqual(clarifyUi.presentationV4.decision,'clarify');
+assert.strictEqual(clarifyUi.components.length,1);
+assert.strictEqual(clarifyUi.components[0].type,'insight');
+assert.ok(clarifyUi.components[0].items[0].text.includes('هل تقصد'));
+assert.ok(clarifyUi.components[0].items[1].text.includes('الحصة من الإجمالي'));
+assert.strictEqual(clarifyUi.presentationV4.manifest,null);
+
+const adviseShadow={ok:true,decision:{decision:'advise',message:'الرسم المطلوب قد يعطي انطباعًا مضللًا لهذه البيانات.',options:['استخدم مخططًا دائريًا للحصة','دعني أختار الأنسب']},promptSize:{chars:500,estimatedTokens:125},llmMs:100,totalMs:110};
+const adviseUi=buildDecisionPresentation(adviseShadow,{usage,model:'claude-test'});
+assert.strictEqual(adviseUi.presentationV4.decision,'advise');
+assert.ok(adviseUi.components[0].items[0].text.includes('مضلل'));
 
 const tree=buildLayoutTree(visible);
 assert.strictEqual(tree.length,2);
@@ -65,12 +81,13 @@ assert.strictEqual(payload.stop_reason,'end_turn');
 assert.strictEqual(payload.usage.output_tokens,250);
 const parsed=JSON.parse(payload.content[0].text);
 assert.strictEqual(parsed.generativeUiVersion,4);
-assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.5');
+assert.strictEqual(parsed.presentationV4.version,'4.0-visible-alpha.6');
 assert.strictEqual(parsed.presentationV4.visibleNormalizerVersion,'1.1');
 assert.strictEqual(parsed.presentationV4.chartHints.c1.skewRatio,100);
 assert.ok(parsed.components.every(c=>typeof c.data==='string'));
 assert.strictEqual(JSON.parse(parsed.layoutTree)[0].children[0].type,'stack');
 assert.throws(()=>buildVisiblePresentation({ok:false}),/successful materialized presentation/i);
+assert.throws(()=>buildDecisionPresentation({ok:true,decision:{decision:'render'}}),/clarify or advise/i);
 assert.deepStrictEqual(summarize({components:[]}),{components:0,types:{}});
 
 const preload=fs.readFileSync(path.join(__dirname,'..','presentation-v4-visible-preload.js'),'utf8');
@@ -78,7 +95,8 @@ const installIndex=preload.indexOf('global.fetch=async function v4VisibleFetch')
 const chainIndex=preload.indexOf("require('./binding-compat-preload.js')");
 assert.ok(installIndex>=0&&chainIndex>installIndex,'V4 interceptor must install before V3 chain so Analyst can enrich the request');
 assert.ok(preload.includes('fail-open to V3'),'visible mode must have explicit fail-open logging');
-assert.ok(preload.includes('return nativeFetch(url,options)'),'visible failures must fall through to V3 Anthropic call');
+assert.ok(preload.includes('buildDecisionPresentation'),'clarify/advise decisions must be visible without falling through to V3');
+assert.ok(preload.includes('return nativeFetch(url,options)'),'visible technical failures must fall through to V3 Anthropic call');
 assert.ok(preload.includes('/presentation-v4-visible-renderer.js'),'visible service must inject the V4-only browser layout adapter');
 assert.ok(preload.includes('/presentation-v4-chart-enhancer.js'),'visible service must inject the V4-only chart enhancer');
 assert.ok(preload.includes("endsWith('/public/index.html')"),'layout adapter injection must be scoped to the served index only');
