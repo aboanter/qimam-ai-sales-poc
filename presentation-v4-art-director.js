@@ -13,10 +13,10 @@ function buildArtDirectorPrompt({question,analystSummary='',catalog}){
     '',
     'AVAILABLE DATASETS:',JSON.stringify(compactCatalog(catalog),null,0),
     '',
-    'Return only the compact manifest. Use only dataset and field names listed above.'
+    'Return only the compact decision object. For render, include manifest. Use only dataset and field names listed above.'
   ].join('\n');
 }
-function parseManifestText(text){
+function parseJsonObject(text){
   const s=String(text||'').trim();
   if(!s)throw new Error('Empty Art Director response');
   try{return JSON.parse(s)}catch{}
@@ -27,12 +27,40 @@ function parseManifestText(text){
     if(inStr){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inStr=false;continue}
     if(ch==='"'){inStr=true;continue}
     if(ch==='{')depth++;
-    if(ch==='}'&&--depth===0){try{return JSON.parse(s.slice(start,i+1))}catch(e){throw new Error(`Invalid manifest JSON: ${e.message}`)}}
+    if(ch==='}'&&--depth===0){try{return JSON.parse(s.slice(start,i+1))}catch(e){throw new Error(`Invalid decision JSON: ${e.message}`)}}
   }
-  throw new Error('Unterminated manifest JSON');
+  throw new Error('Unterminated decision JSON');
+}
+function normalizeDecision(value){
+  const obj=typeof value==='string'?parseJsonObject(value):value;
+  if(!obj||typeof obj!=='object'||Array.isArray(obj))throw new Error('Art Director decision must be an object');
+  // Backward compatibility during V4 rollout: a direct manifest means render.
+  if(!obj.decision)return{decision:'render',manifest:obj};
+  const decision=String(obj.decision).toLowerCase();
+  if(decision==='render'){
+    if(!obj.manifest||typeof obj.manifest!=='object'||Array.isArray(obj.manifest))throw new Error('render decision requires manifest');
+    return{decision:'render',manifest:obj.manifest};
+  }
+  if(decision==='clarify'){
+    const question=String(obj.question||'').trim();
+    if(!question)throw new Error('clarify decision requires question');
+    return{decision:'clarify',question,options:Array.isArray(obj.options)?obj.options.slice(0,3).map(String):[]};
+  }
+  if(decision==='advise'){
+    const message=String(obj.message||'').trim();
+    if(!message)throw new Error('advise decision requires message');
+    return{decision:'advise',message,options:Array.isArray(obj.options)?obj.options.slice(0,3).map(String):[]};
+  }
+  throw new Error(`Unsupported Art Director decision: ${decision}`);
+}
+// Historical export kept for existing tests/callers. It returns a direct manifest when
+// the response is render, and the decision object for clarify/advise.
+function parseManifestText(text){
+  const d=normalizeDecision(text);
+  return d.decision==='render'?d.manifest:d;
 }
 function estimatePromptSize(prompt){
   const chars=String(prompt||'').length;
   return{chars,estimatedTokens:Math.ceil(chars/4)};
 }
-module.exports={buildArtDirectorPrompt,parseManifestText,estimatePromptSize};
+module.exports={buildArtDirectorPrompt,parseManifestText,parseJsonObject,normalizeDecision,estimatePromptSize};
