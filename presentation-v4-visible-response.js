@@ -51,26 +51,53 @@ function collectChartHints(presentation){
   return hints;
 }
 
-function buildVisiblePresentation(shadow,{usage=null,model='claude-sonnet-4-6'}={}){
-  if(!shadow?.ok||!shadow?.presentation)throw new Error('V4 visible requires a successful materialized presentation');
-  const presentation=normalizeVisiblePresentation(shadow.presentation);
+function attachV4Meta(presentation,shadow,{usage=null,model='claude-sonnet-4-6'}={}){
   const chartHints=collectChartHints(presentation);
   presentation.layoutTree=buildLayoutTree(presentation);
   presentation.presentationV4={
-    version:'4.0-visible-alpha.5',
+    version:'4.0-visible-alpha.6',
     mode:'visible_test',
-    prompt:shadow.promptSize||null,
-    llmMs:shadow.llmMs??null,
-    totalMs:shadow.totalMs??null,
+    decision:shadow?.decision?.decision||'render',
+    prompt:shadow?.promptSize||null,
+    llmMs:shadow?.llmMs??null,
+    totalMs:shadow?.totalMs??null,
     usage,
     model,
     summary:summarize(presentation),
-    manifest:shadow.manifest||null,
+    manifest:shadow?.manifest||null,
     layoutSource:'server_manifest',
     visibleNormalizerVersion:'1.1',
     chartHints
   };
   return presentation;
+}
+
+function buildVisiblePresentation(shadow,{usage=null,model='claude-sonnet-4-6'}={}){
+  if(!shadow?.ok||!shadow?.presentation)throw new Error('V4 visible requires a successful materialized presentation');
+  const presentation=normalizeVisiblePresentation(shadow.presentation);
+  return attachV4Meta(presentation,shadow,{usage,model});
+}
+
+function buildDecisionPresentation(shadow,{usage=null,model='claude-sonnet-4-6'}={}){
+  if(!shadow?.ok||!shadow?.decision||shadow.decision.decision==='render')throw new Error('V4 decision presentation requires clarify or advise');
+  const d=shadow.decision;
+  const isClarify=d.decision==='clarify';
+  const primary=String(isClarify?d.question:d.message||'').trim();
+  const options=Array.isArray(d.options)?d.options.filter(Boolean).slice(0,3):[];
+  const items=[{text:primary},...options.map((x,i)=>({text:`${i+1}. ${String(x)}`}))];
+  const presentation={
+    title:isClarify?'أحتاج توضيحًا قبل إنشاء التقرير':'اقتراح قبل إنشاء التقرير',
+    summary:'',
+    components:[{
+      type:'insight',title:'',id:'v4_decision_1',items,
+      section:{id:'decision',presentation:'panel',layout:'wide',order:1}
+    }],
+    designSystem:{},generativeUiVersion:4,
+    presentationBuilderVersion:'4.0.0-alpha.5',
+    presentationManifestVersion:'1.3',
+    materialization:{components:1,failures:[]}
+  };
+  return attachV4Meta(presentation,shadow,{usage,model});
 }
 
 function toStructuredAdapterUi(presentation){
@@ -114,4 +141,4 @@ function responseFromPayload(payload){
   return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
 }
 
-module.exports={summarize,buildLayoutTree,collectChartHints,buildVisiblePresentation,toStructuredAdapterUi,buildAnthropicPayload,responseFromPayload};
+module.exports={summarize,buildLayoutTree,collectChartHints,buildVisiblePresentation,buildDecisionPresentation,toStructuredAdapterUi,buildAnthropicPayload,responseFromPayload};
