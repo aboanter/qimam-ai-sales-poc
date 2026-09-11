@@ -9,6 +9,7 @@
 const CHART_TYPES = new Set(['bar_chart','line_chart','area_chart','pie_chart','donut_chart']);
 const COMPONENT_TYPES = new Set(['kpi','table','bar_chart','line_chart','area_chart','pie_chart','donut_chart','insight']);
 const LAYOUTS = new Set(['wide','grid','split','stack','strip']);
+const FORMULA_OPS = new Set(['divide','subtract','add','multiply','percent_change']);
 const SUPPORTED_ICONS = new Set(['trend','revenue','receipt','return','profit','warning','users','cart','invoice','chart','wallet','check','clock','spark']);
 const ICON_ALIASES = {
   'trending-up':'trend','trending_up':'trend','arrow-up-right':'trend','growth':'trend',
@@ -105,6 +106,25 @@ function aggregate(rows,key,mode='sum'){
   if(mode === 'max') return Math.max(...vals);
   return vals.reduce((a,b)=>a+b,0);
 }
+function resolveOperand(operand,datasets){
+  if(!isObj(operand) || !operand.dataset || !operand.field) return null;
+  const rows=datasetRows(datasets,operand.dataset);
+  if(!rows.length) return null;
+  return aggregate(rows,operand.field,operand.aggregate||'sum');
+}
+function computeFormula(formula,datasets){
+  if(!isObj(formula) || !FORMULA_OPS.has(String(formula.op||''))) return null;
+  const left=resolveOperand(formula.left,datasets),right=resolveOperand(formula.right,datasets);
+  if(left===null || right===null) return null;
+  switch(formula.op){
+    case 'divide': return right===0?null:left/right;
+    case 'subtract': return left-right;
+    case 'add': return left+right;
+    case 'multiply': return left*right;
+    case 'percent_change': return right===0?null:(left-right)/Math.abs(right);
+    default: return null;
+  }
+}
 function sortRows(rows,spec={}){
   const out = rows.slice();
   const direction = spec.sort === 'asc' || spec.sort === 'desc' ? spec.sort : 'none';
@@ -130,6 +150,17 @@ function groupPairs(rows,labelField,valueField,aggregateMode='sum'){
     grouped.set(l,(grouped.get(l)||0)+v);
   }
   return [...grouped.entries()].map(([label,value])=>({label,value}));
+}
+function comparisonPairs(points,datasets){
+  if(!Array.isArray(points)) return [];
+  return points.map(p=>{
+    if(!isObj(p) || !p.dataset || !p.field) return null;
+    const rows=datasetRows(datasets,p.dataset);
+    if(!rows.length) return null;
+    const value=aggregate(rows,p.field,p.aggregate||'sum');
+    if(value===null) return null;
+    return {label:String(p.label||p.dataset),value};
+  }).filter(Boolean);
 }
 function skewHint(type,pairs){
   if(!['line_chart','area_chart'].includes(type) || pairs.length<3) return null;
@@ -164,36 +195,44 @@ function baseComponent(spec,index){
     ...(isObj(spec.componentLayout) ? {componentLayout:clone(spec.componentLayout)} : {})
   };
 }
-function buildKpi(spec,rows,index){
+function buildKpi(spec,rows,index,datasets){
   const out = baseComponent(spec,index);
-  const value = spec.value != null ? num(spec.value) : aggregate(rows,spec.field || spec.valueField,spec.aggregate || 'sum');
+  const value = isObj(spec.formula)
+    ? computeFormula(spec.formula,datasets)
+    : (spec.value != null ? num(spec.value) : aggregate(rows,spec.field || spec.valueField,spec.aggregate || 'sum'));
   if(value === null) throw new Error(`KPI ${out.id} produced no numeric value`);
   out.value=value;
   out.format=spec.format || 'number';
   if(spec.currencyLabel) out.currencyLabel=String(spec.currencyLabel);
   if(spec.numberLocale) out.numberLocale=String(spec.numberLocale);
   if(spec.icon) out.icon=normalizeIcon(spec.icon);
+  if(isObj(spec.formula)) out.derived=true;
   return out;
 }
-function buildChart(spec,rows,index){
+function buildChart(spec,rows,index,datasets){
   const out = baseComponent(spec,index);
-  const labelField = spec.labelField || spec.categoryField || spec.x;
-  const valueField = spec.valueField || spec.seriesField || spec.y;
-  if(!labelField || !valueField) throw new Error(`Chart ${out.id} requires label/category and value/series fields`);
   let pairs;
-  if(spec.group === true || spec.aggregateByLabel === true){
-    pairs = groupPairs(rows,labelField,valueField,spec.aggregate || 'sum');
-    if(spec.sort === 'asc') pairs.sort((a,b)=>a.value-b.value);
-    if(spec.sort === 'desc') pairs.sort((a,b)=>b.value-a.value);
-    pairs = pairs.slice(0,Math.max(1,Math.min(Number(spec.limit)||100,500)));
+  if(Array.isArray(spec.points) && spec.points.length){
+    pairs=comparisonPairs(spec.points,datasets);
   }else{
-    pairs = sortRows(rows,{...spec,sortField:spec.sortField || (spec.sortBy === 'label' ? labelField : spec.sortField)}).map(r=>({label:displayCategory(field(r,labelField),labelField),value:num(field(r,valueField))})).filter(p=>p.label && Number.isFinite(p.value));
+    const labelField = spec.labelField || spec.categoryField || spec.x;
+    const valueField = spec.valueField || spec.seriesField || spec.y;
+    if(!labelField || !valueField) throw new Error(`Chart ${out.id} requires label/category and value/series fields`);
+    if(spec.group === true || spec.aggregateByLabel === true){
+      pairs = groupPairs(rows,labelField,valueField,spec.aggregate || 'sum');
+      if(spec.sort === 'asc') pairs.sort((a,b)=>a.value-b.value);
+      if(spec.sort === 'desc') pairs.sort((a,b)=>b.value-a.value);
+      pairs = pairs.slice(0,Math.max(1,Math.min(Number(spec.limit)||100,500)));
+    }else{
+      pairs = sortRows(rows,{...spec,sortField:spec.sortField || (spec.sortBy === 'label' ? labelField : spec.sortField)}).map(r=>({label:displayCategory(field(r,labelField),labelField),value:num(field(r,valueField))})).filter(p=>p.label && Number.isFinite(p.value));
+    }
   }
   if(!pairs.length) throw new Error(`Chart ${out.id} produced no plottable data`);
   out.categories=pairs.map(p=>p.label);
   out.series=[{name:String(spec.seriesLabel || spec.seriesName || out.title || 'القيمة'),data:pairs.map(p=>p.value)}];
   const hint=skewHint(out.type,pairs);
   if(hint)out.componentLayout={...(out.componentLayout||{}),...hint};
+  if(Array.isArray(spec.points)) out.comparison=true;
   return out;
 }
 function buildTable(spec,rows,index){
@@ -218,10 +257,10 @@ function buildInsight(spec,index){
 function materializeComponent(spec,datasets,index){
   const rows = spec.dataset ? datasetRows(datasets,spec.dataset) : [];
   if(spec.dataset && !rows.length) throw new Error(`Dataset not found or empty: ${spec.dataset}`);
-  if(spec.type === 'kpi') return buildKpi(spec,rows,index);
+  if(spec.type === 'kpi') return buildKpi(spec,rows,index,datasets);
   if(CHART_TYPES.has(spec.type)){
     const normalized={...spec,type:spec.type === 'donut_chart' ? 'pie_chart' : spec.type};
-    return buildChart(normalized,rows,index);
+    return buildChart(normalized,rows,index,datasets);
   }
   if(spec.type === 'table') return buildTable(spec,rows,index);
   if(spec.type === 'insight') return buildInsight(spec,index);
@@ -247,6 +286,10 @@ function flattenManifest(manifest){
   }
   return out;
 }
+function validateOperand(op,datasets,labelPrefix,errors){
+  if(!isObj(op) || !op.dataset || !op.field){ errors.push(`${labelPrefix} missing dataset/field`); return; }
+  if(!datasetRows(datasets,op.dataset).length) errors.push(`${labelPrefix} missing dataset ${op.dataset}`);
+}
 function validateManifest(manifest,datasets){
   const errors=[];
   if(!isObj(manifest)) return {ok:false,errors:['manifest must be an object']};
@@ -255,8 +298,18 @@ function validateManifest(manifest,datasets){
   components.forEach((c,i)=>{
     if(!COMPONENT_TYPES.has(String(c.type||''))) errors.push(`component[${i}] unsupported type ${String(c.type||'(missing)')}`);
     if(c.dataset && !datasetRows(datasets,c.dataset).length) errors.push(`component[${i}] missing dataset ${c.dataset}`);
-    if(CHART_TYPES.has(c.type) && !(c.labelField||c.categoryField||c.x)) errors.push(`component[${i}] chart missing label field`);
-    if(CHART_TYPES.has(c.type) && !(c.valueField||c.seriesField||c.y)) errors.push(`component[${i}] chart missing value field`);
+    if(c.type==='kpi' && c.formula){
+      if(!FORMULA_OPS.has(String(c.formula.op||''))) errors.push(`component[${i}] unsupported formula op ${String(c.formula.op||'(missing)')}`);
+      validateOperand(c.formula.left,datasets,`component[${i}] formula.left`,errors);
+      validateOperand(c.formula.right,datasets,`component[${i}] formula.right`,errors);
+    }
+    if(CHART_TYPES.has(c.type) && Array.isArray(c.points) && c.points.length){
+      if(c.type!=='bar_chart') errors.push(`component[${i}] comparison points require bar_chart`);
+      c.points.forEach((p,pi)=>validateOperand(p,datasets,`component[${i}] points[${pi}]`,errors));
+    }else if(CHART_TYPES.has(c.type)){
+      if(!(c.labelField||c.categoryField||c.x)) errors.push(`component[${i}] chart missing label field`);
+      if(!(c.valueField||c.seriesField||c.y)) errors.push(`component[${i}] chart missing value field`);
+    }
     if(c.type==='table' && (!Array.isArray(c.columns)||!c.columns.length)) errors.push(`component[${i}] table missing columns`);
   });
   return {ok:!errors.length,errors};
@@ -276,8 +329,8 @@ function buildPresentation(manifest,datasets,{strict=true}={}){
     components,
     designSystem:isObj(manifest.designSystem) ? clone(manifest.designSystem) : {},
     generativeUiVersion:4,
-    presentationBuilderVersion:'4.0.0-alpha.3',
-    presentationManifestVersion:'1.0',
+    presentationBuilderVersion:'4.0.0-alpha.4',
+    presentationManifestVersion:'1.1',
     materialization:{components:components.length,failures}
   };
 }
@@ -293,5 +346,7 @@ module.exports={
   num,
   normalizeIcon,
   displayCategory,
-  skewHint
+  skewHint,
+  computeFormula,
+  comparisonPairs
 };
