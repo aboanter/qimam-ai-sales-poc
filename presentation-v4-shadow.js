@@ -1,6 +1,6 @@
 'use strict';
 const {buildDatasetCatalog}=require('./presentation-v4-catalog');
-const {buildArtDirectorPrompt,parseManifestText,estimatePromptSize}=require('./presentation-v4-art-director');
+const {buildArtDirectorPrompt,normalizeDecision,estimatePromptSize}=require('./presentation-v4-art-director');
 const {buildPresentation,validateManifest}=require('./presentation-v4-core');
 
 function summarizeUi(ui){
@@ -16,11 +16,16 @@ async function runShadow({question,plan,results,analystSummary='',artDirector}){
   const llmStart=Date.now();
   const raw=await artDirector({prompt,catalog});
   const llmMs=Date.now()-llmStart;
-  const manifest=typeof raw==='string'?parseManifestText(raw):raw;
+  let decision;
+  try{decision=normalizeDecision(raw)}catch(e){return{ok:false,stage:'parse_decision',errors:[e.message],promptSize,llmMs,totalMs:Date.now()-started};}
+  if(decision.decision!=='render'){
+    return{ok:true,stage:'decision',decision,promptSize,llmMs,totalMs:Date.now()-started,catalog};
+  }
+  const manifest=decision.manifest;
   const validation=validateManifest(manifest,datasets);
-  if(!validation.ok)return{ok:false,stage:'validate_manifest',errors:validation.errors,manifest,promptSize,llmMs,totalMs:Date.now()-started};
+  if(!validation.ok)return{ok:false,stage:'validate_manifest',errors:validation.errors,manifest,decision,promptSize,llmMs,totalMs:Date.now()-started};
   let presentation;
-  try{presentation=buildPresentation(manifest,datasets)}catch(e){return{ok:false,stage:'materialize',errors:[e.message],manifest,promptSize,llmMs,totalMs:Date.now()-started}}
-  return{ok:true,manifest,presentation,catalog,promptSize,llmMs,totalMs:Date.now()-started,summary:summarizeUi(presentation)};
+  try{presentation=buildPresentation(manifest,datasets)}catch(e){return{ok:false,stage:'materialize',errors:[e.message],manifest,decision,promptSize,llmMs,totalMs:Date.now()-started}}
+  return{ok:true,stage:'render',decision,manifest,presentation,catalog,promptSize,llmMs,totalMs:Date.now()-started,summary:summarizeUi(presentation)};
 }
 module.exports={runShadow,summarizeUi};
