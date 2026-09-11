@@ -2,8 +2,9 @@
 
 // V4 visible-test interceptor. It is installed BEFORE the proven V3 preload chain so
 // the existing Analyst layer can enrich the presentation request first. When V4 succeeds,
-// it replaces only the Anthropic presentation response. Any V4 failure falls through to
-// the original V3 Anthropic call, preserving a working result.
+// it replaces only the Anthropic presentation response. Any technical V4 failure falls through
+// to the original V3 Anthropic call, preserving a working result. Clarify/advise decisions are
+// intentional V4 outcomes and are shown to the user instead of falling through.
 
 const fs=require('fs');
 const path=require('path');
@@ -12,11 +13,8 @@ const nativeFetch=global.fetch;
 const {parseRequestBody,isPresentationBody,extractEnvelope}=require('./presentation-v4-envelope');
 const {runShadow}=require('./presentation-v4-shadow');
 const {callAnthropicArtDirector}=require('./presentation-v4-anthropic');
-const {buildVisiblePresentation,buildAnthropicPayload,responseFromPayload,summarize}=require('./presentation-v4-visible-response');
+const {buildVisiblePresentation,buildDecisionPresentation,buildAnthropicPayload,responseFromPayload,summarize}=require('./presentation-v4-visible-response');
 
-// Inject browser-side adapters only on the V4 visible service. server.js and the
-// production index remain untouched. Both adapters are additionally gated by
-// schema.presentationV4, so V3 fail-open responses keep their existing rendering path.
 fs.readFileSync=function v4VisibleReadFileSync(file,...args){
   const value=nativeReadFileSync(file,...args);
   try{
@@ -56,7 +54,9 @@ async function runVisible(envelope){
     error.shadow=shadow;
     throw error;
   }
-  const presentation=buildVisiblePresentation(shadow,{usage,model});
+  const presentation=shadow.presentation
+    ? buildVisiblePresentation(shadow,{usage,model})
+    : buildDecisionPresentation(shadow,{usage,model});
   return{shadow,presentation,usage,model};
 }
 
@@ -71,6 +71,7 @@ global.fetch=async function v4VisibleFetch(url,options={}){
     console.log('[V4:VISIBLE]',JSON.stringify({
       ok:true,
       mode:'visible_test',
+      decision:out.shadow?.decision?.decision||'render',
       v4:summarize(out.presentation),
       prompt:out.shadow.promptSize||null,
       llmMs:out.shadow.llmMs||null,
@@ -85,7 +86,6 @@ global.fetch=async function v4VisibleFetch(url,options={}){
   }
 };
 
-// Load the established application only after installing the V4 inner interceptor.
 require('./binding-compat-preload.js');
 console.log('[V4:VISIBLE] enabled; V4 is user-visible on this test service, V3 remains fail-open fallback');
 
