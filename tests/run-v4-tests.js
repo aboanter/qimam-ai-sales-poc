@@ -3,6 +3,7 @@ const {spawnSync}=require('child_process');
 const path=require('path');
 const tests=[
   'presentation-v4-core.test.js',
+  'presentation-v4-derived.test.js',
   'presentation-v4-catalog.test.js',
   'presentation-v4-dynamic.test.js',
   'presentation-v4-envelope.test.js',
