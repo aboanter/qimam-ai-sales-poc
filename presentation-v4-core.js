@@ -101,6 +101,7 @@ function aggregate(rows,key,mode='sum'){
   const vals = rows.map(r=>num(field(r,key))).filter(Number.isFinite);
   if(!vals.length) return null;
   if(mode === 'first') return vals[0];
+  if(mode === 'last') return vals[vals.length-1];
   if(mode === 'avg' || mode === 'average') return vals.reduce((a,b)=>a+b,0)/vals.length;
   if(mode === 'min') return Math.min(...vals);
   if(mode === 'max') return Math.max(...vals);
@@ -247,8 +248,35 @@ function buildTable(spec,rows,index){
   }));
   return out;
 }
-function buildInsight(spec,index){
+function formatFactValue(value,format,currencyLabel){
+  if(!Number.isFinite(value))return '';
+  const text=new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(value);
+  if(format==='currency')return `${text} ${currencyLabel||'ر.س'}`;
+  if(format==='percent')return `${new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(value*100)}%`;
+  return text;
+}
+function buildGroundedFact(fact,datasets){
+  if(!isObj(fact))return null;
+  const left=resolveOperand(fact.left,datasets),right=resolveOperand(fact.right,datasets);
+  if(left===null||right===null)return null;
+  const metric=String(fact.label||'القيمة');
+  const leftLabel=String(fact.leftLabel||'الفترة الأولى');
+  const rightLabel=String(fact.rightLabel||'الفترة الثانية');
+  const leftText=formatFactValue(left,fact.format,fact.currencyLabel);
+  const rightText=formatFactValue(right,fact.format,fact.currencyLabel);
+  if(left===right)return {text:`لم يتغير ${metric} بين ${leftLabel} و${rightLabel} وبقي عند ${rightText}.`,grounded:true};
+  const direction=right>left?'ارتفع':'انخفض';
+  const pct=left===0?null:Math.abs((right-left)/left);
+  const pctText=pct===null?'':` بنسبة ${new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(pct*100)}%`;
+  return {text:`${direction} ${metric} من ${leftText} في ${leftLabel} إلى ${rightText} في ${rightLabel}${pctText}.`,grounded:true};
+}
+function buildInsight(spec,index,datasets){
   const out=baseComponent(spec,index);
+  if(Array.isArray(spec.facts)&&spec.facts.length){
+    out.items=spec.facts.map(f=>buildGroundedFact(f,datasets)).filter(Boolean);
+    out.grounded=true;
+    return out;
+  }
   const items = Array.isArray(spec.items) ? spec.items : [];
   out.items=items.map(x=>typeof x === 'string' ? {text:x} : {text:String(x.text || ''), ...(x.icon ? {icon:x.icon} : {})}).filter(x=>x.text);
   if(spec.text && !out.items.length) out.text=String(spec.text);
@@ -263,7 +291,7 @@ function materializeComponent(spec,datasets,index){
     return buildChart(normalized,rows,index,datasets);
   }
   if(spec.type === 'table') return buildTable(spec,rows,index);
-  if(spec.type === 'insight') return buildInsight(spec,index);
+  if(spec.type === 'insight') return buildInsight(spec,index,datasets);
   throw new Error(`Unsupported component type: ${spec.type}`);
 }
 function flattenManifest(manifest){
@@ -310,6 +338,12 @@ function validateManifest(manifest,datasets){
       if(!(c.labelField||c.categoryField||c.x)) errors.push(`component[${i}] chart missing label field`);
       if(!(c.valueField||c.seriesField||c.y)) errors.push(`component[${i}] chart missing value field`);
     }
+    if(c.type==='insight' && Array.isArray(c.facts)){
+      c.facts.forEach((f,fi)=>{
+        validateOperand(f?.left,datasets,`component[${i}] facts[${fi}].left`,errors);
+        validateOperand(f?.right,datasets,`component[${i}] facts[${fi}].right`,errors);
+      });
+    }
     if(c.type==='table' && (!Array.isArray(c.columns)||!c.columns.length)) errors.push(`component[${i}] table missing columns`);
   });
   return {ok:!errors.length,errors};
@@ -329,8 +363,8 @@ function buildPresentation(manifest,datasets,{strict=true}={}){
     components,
     designSystem:isObj(manifest.designSystem) ? clone(manifest.designSystem) : {},
     generativeUiVersion:4,
-    presentationBuilderVersion:'4.0.0-alpha.4',
-    presentationManifestVersion:'1.1',
+    presentationBuilderVersion:'4.0.0-alpha.5',
+    presentationManifestVersion:'1.2',
     materialization:{components:components.length,failures}
   };
 }
@@ -348,5 +382,7 @@ module.exports={
   displayCategory,
   skewHint,
   computeFormula,
-  comparisonPairs
+  comparisonPairs,
+  aggregate,
+  buildGroundedFact
 };
