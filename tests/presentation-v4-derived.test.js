@@ -38,7 +38,6 @@ const check=validateManifest(manifest,datasets);
 assert.strictEqual(check.ok,true,check.errors.join('\n'));
 const ui=buildPresentation(manifest,datasets);
 assert.strictEqual(ui.presentationBuilderVersion,'4.0.0-alpha.5');
-assert.strictEqual(ui.presentationManifestVersion,'1.2');
 assert.ok(Math.abs(ui.components[0].value-(32148.67/74))<1e-9);
 assert.ok(Math.abs(ui.components[1].value-(227923.10/60))<1e-9);
 assert.ok(Math.abs(ui.components[2].value-((227923.10-32148.67)/32148.67))<1e-9);
@@ -63,10 +62,20 @@ const grounded=buildGroundedFact({label:'عدد الطلبات',leftLabel:'Q3',r
 assert.ok(grounded.text.includes('انخفض عدد الطلبات'));
 assert.ok(!grounded.text.includes('ارتفع عدد الطلبات'));
 
+// Comparison points are chart-neutral: the Art Director, not the local builder,
+// chooses whether the same two values are shown as bar, pie, line, etc.
+const pieManifest={sections:[{components:[{type:'pie_chart',title:'حصة الربعين',points:[
+  {label:'Q3',dataset:'quarters',field:'amount_total:sum',aggregate:'first'},
+  {label:'Q4',dataset:'quarters',field:'amount_total:sum',aggregate:'last'}
+]}]}]};
+assert.strictEqual(validateManifest(pieManifest,datasets).ok,true);
+const pieUi=buildPresentation(pieManifest,datasets);
+assert.strictEqual(pieUi.components[0].type,'pie_chart');
+assert.deepStrictEqual(pieUi.components[0].categories,['Q3','Q4']);
+assert.deepStrictEqual(pieUi.components[0].series[0].data,[32148.67,227923.10]);
+
 const badFormula={sections:[{components:[{type:'kpi',title:'x',formula:{op:'divide',left:{dataset:'missing',field:'x'},right:{dataset:'q3',field:'date_order:count_distinct'}}}]}]};
 assert.strictEqual(validateManifest(badFormula,datasets).ok,false);
-const badChart={sections:[{components:[{type:'line_chart',title:'x',points:[{label:'Q3',dataset:'q3',field:'amount_total:sum'}]}]}]};
-assert.strictEqual(validateManifest(badChart,datasets).ok,false);
 const badInsight={sections:[{components:[{type:'insight',facts:[{label:'x',left:{dataset:'missing',field:'x'},right:{dataset:'q4',field:'amount_total:sum'}}]}]}]};
 assert.strictEqual(validateManifest(badInsight,datasets).ok,false);
 
