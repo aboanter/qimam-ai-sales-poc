@@ -332,7 +332,6 @@ function validateManifest(manifest,datasets){
       validateOperand(c.formula.right,datasets,`component[${i}] formula.right`,errors);
     }
     if(CHART_TYPES.has(c.type) && Array.isArray(c.points) && c.points.length){
-      if(c.type!=='bar_chart') errors.push(`component[${i}] comparison points require bar_chart`);
       c.points.forEach((p,pi)=>validateOperand(p,datasets,`component[${i}] points[${pi}]`,errors));
     }else if(CHART_TYPES.has(c.type)){
       if(!(c.labelField||c.categoryField||c.x)) errors.push(`component[${i}] chart missing label field`);
