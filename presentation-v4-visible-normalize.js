@@ -61,7 +61,7 @@ function recomputeSkew(c){
   c.componentLayout=Object.keys(base).length?base:undefined;
 }
 function normalizeTemporalChart(c,arabic){
-  if(!['line_chart','area_chart'].includes(c?.type)||!Array.isArray(c.categories)||c.categories.length<2)return;
+  if(!['line_chart','area_chart','bar_chart'].includes(c?.type)||!Array.isArray(c.categories)||c.categories.length<2)return;
   const keyed=c.categories.map((cat,i)=>({i,key:temporalKey(cat)}));
   if(keyed.some(x=>x.key==null))return;
   keyed.sort((a,b)=>a.key-b.key);
